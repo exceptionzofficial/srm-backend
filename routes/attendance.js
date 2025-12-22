@@ -1,0 +1,228 @@
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const Attendance = require('../models/Attendance');
+const Employee = require('../models/Employee');
+const { searchFace } = require('../utils/rekognition');
+const { getGeofenceSettings } = require('../models/Settings');
+const { isWithinGeofence } = require('../utils/geofence');
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+/**
+ * Mark attendance (check-in) with face verification
+ * POST /api/attendance/check-in
+ */
+router.post('/check-in', upload.single('image'), async (req, res) => {
+    try {
+        const { latitude, longitude, imageBase64 } = req.body;
+
+        if (!latitude || !longitude) {
+            return res.status(400).json({
+                success: false,
+                message: 'Location is required',
+            });
+        }
+
+        // Check geo-fence
+        const geofence = await getGeofenceSettings();
+        if (geofence.isConfigured) {
+            const locationCheck = isWithinGeofence(
+                parseFloat(latitude),
+                parseFloat(longitude),
+                geofence.officeLat,
+                geofence.officeLng,
+                geofence.radiusMeters
+            );
+
+            if (!locationCheck.isWithin) {
+                return res.status(403).json({
+                    success: false,
+                    message: `You are too far from the office! Distance: ${locationCheck.distance}m`,
+                    withinRange: false,
+                });
+            }
+        }
+
+        // Get image buffer
+        let imageBuffer;
+        if (req.file) {
+            imageBuffer = req.file.buffer;
+        } else if (imageBase64) {
+            const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+            imageBuffer = Buffer.from(base64Data, 'base64');
+        } else {
+            return res.status(400).json({
+                success: false,
+                message: 'Image is required',
+            });
+        }
+
+        // Verify face
+        const faceResult = await searchFace(imageBuffer);
+        if (!faceResult.success) {
+            return res.status(404).json({
+                success: false,
+                message: 'Face not recognized. Please register first.',
+            });
+        }
+
+        const employeeId = faceResult.employeeId;
+
+        // Check if already checked in today
+        const existingAttendance = await Attendance.getTodayAttendance(employeeId);
+        if (existingAttendance) {
+            return res.status(400).json({
+                success: false,
+                message: 'Already checked in today',
+                attendance: existingAttendance,
+            });
+        }
+
+        // Get employee details
+        const employee = await Employee.getEmployeeById(employeeId);
+
+        // Create attendance record
+        const attendance = await Attendance.createAttendance({
+            employeeId,
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
+        });
+
+        res.json({
+            success: true,
+            message: `Good morning, ${employee.name}! Check-in successful.`,
+            attendance,
+            employee: {
+                employeeId: employee.employeeId,
+                name: employee.name,
+                department: employee.department,
+            },
+        });
+    } catch (error) {
+        console.error('Error checking in:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error marking attendance',
+        });
+    }
+});
+
+/**
+ * Check-out
+ * POST /api/attendance/check-out
+ */
+router.post('/check-out', upload.single('image'), async (req, res) => {
+    try {
+        const { imageBase64 } = req.body;
+
+        // Get image buffer
+        let imageBuffer;
+        if (req.file) {
+            imageBuffer = req.file.buffer;
+        } else if (imageBase64) {
+            const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+            imageBuffer = Buffer.from(base64Data, 'base64');
+        } else {
+            return res.status(400).json({
+                success: false,
+                message: 'Image is required',
+            });
+        }
+
+        // Verify face
+        const faceResult = await searchFace(imageBuffer);
+        if (!faceResult.success) {
+            return res.status(404).json({
+                success: false,
+                message: 'Face not recognized',
+            });
+        }
+
+        const employeeId = faceResult.employeeId;
+
+        // Get today's attendance
+        const attendance = await Attendance.getTodayAttendance(employeeId);
+        if (!attendance) {
+            return res.status(400).json({
+                success: false,
+                message: 'No check-in record found for today',
+            });
+        }
+
+        if (attendance.checkOutTime) {
+            return res.status(400).json({
+                success: false,
+                message: 'Already checked out today',
+            });
+        }
+
+        // Update with checkout
+        const updated = await Attendance.checkOut(attendance.attendanceId);
+        const employee = await Employee.getEmployeeById(employeeId);
+
+        res.json({
+            success: true,
+            message: `Goodbye, ${employee.name}! Check-out successful.`,
+            attendance: updated,
+        });
+    } catch (error) {
+        console.error('Error checking out:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error checking out',
+        });
+    }
+});
+
+/**
+ * Get attendance history for employee
+ * GET /api/attendance/:employeeId
+ */
+router.get('/:employeeId', async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+        const { limit } = req.query;
+
+        const history = await Attendance.getAttendanceHistory(
+            employeeId,
+            limit ? parseInt(limit) : 30
+        );
+
+        res.json({
+            success: true,
+            history,
+        });
+    } catch (error) {
+        console.error('Error fetching attendance history:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching attendance history',
+        });
+    }
+});
+
+/**
+ * Get all attendance for a date (admin)
+ * GET /api/attendance/date/:date
+ */
+router.get('/date/:date', async (req, res) => {
+    try {
+        const { date } = req.params;
+        const records = await Attendance.getAttendanceByDate(date);
+
+        res.json({
+            success: true,
+            date,
+            records,
+        });
+    } catch (error) {
+        console.error('Error fetching attendance by date:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching attendance records',
+        });
+    }
+});
+
+module.exports = router;
