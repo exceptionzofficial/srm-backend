@@ -225,4 +225,41 @@ router.get('/date/:date', async (req, res) => {
     }
 });
 
+/**
+ * Update attendance record (admin)
+ * PUT /api/attendance/:attendanceId
+ */
+router.put('/:attendanceId', async (req, res) => {
+    try {
+        const { attendanceId } = req.params;
+        const { checkInTime, checkOutTime, status } = req.body;
+
+        const updates = {};
+        if (checkInTime) updates.checkInTime = checkInTime;
+        if (checkOutTime) updates.checkOutTime = checkOutTime;
+        if (status) updates.status = status;
+
+        const attendance = await Attendance.updateAttendance(attendanceId, updates);
+
+        if (!attendance) {
+            return res.status(404).json({
+                success: false,
+                message: 'Attendance record not found',
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Attendance updated successfully',
+            attendance,
+        });
+    } catch (error) {
+        console.error('Error updating attendance:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating attendance record',
+        });
+    }
+});
+
 module.exports = router;

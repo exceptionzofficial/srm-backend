@@ -152,10 +152,44 @@ function determineStatus(checkInTime) {
     }
 }
 
+/**
+ * Update attendance record (admin)
+ */
+async function updateAttendance(attendanceId, updates) {
+    // First find the record
+    const scanCommand = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'attendanceId = :attId',
+        ExpressionAttributeValues: {
+            ':attId': attendanceId,
+        },
+    });
+
+    const response = await docClient.send(scanCommand);
+    if (!response.Items || response.Items.length === 0) {
+        return null;
+    }
+
+    const existing = response.Items[0];
+    const updated = {
+        ...existing,
+        ...updates,
+    };
+
+    const putCommand = new PutCommand({
+        TableName: TABLE_NAME,
+        Item: updated,
+    });
+
+    await docClient.send(putCommand);
+    return updated;
+}
+
 module.exports = {
     createAttendance,
     getTodayAttendance,
     checkOut,
     getAttendanceHistory,
     getAttendanceByDate,
+    updateAttendance,
 };
