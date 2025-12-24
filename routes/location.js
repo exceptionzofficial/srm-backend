@@ -121,8 +121,13 @@ router.get('/employees', async (req, res) => {
         // Get all employees
         const employees = await Employee.getAllEmployees();
 
-        // Get latest pings for today
-        const latestPings = await LocationPing.getAllLatestPings();
+        // Try to get latest pings (may fail if table doesn't exist)
+        let latestPings = [];
+        try {
+            latestPings = await LocationPing.getAllLatestPings();
+        } catch (pingError) {
+            console.log('LocationPings table may not exist yet, returning employees without ping data');
+        }
 
         // Create a map of employeeId -> latest ping
         const pingMap = {};
