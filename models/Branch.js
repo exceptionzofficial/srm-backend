@@ -62,6 +62,7 @@ async function createBranch(branchData) {
         latitude: branchData.latitude,
         longitude: branchData.longitude,
         radiusMeters: branchData.radiusMeters || 100,
+        branchType: branchData.branchType || 'main', // main, sales, inventory
         isActive: branchData.isActive !== false,
         createdAt: timestamp,
         updatedAt: timestamp,

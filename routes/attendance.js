@@ -69,24 +69,29 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
 
         const employeeId = faceResult.employeeId;
 
-        // Check if already checked in today
-        const existingAttendance = await Attendance.getTodayAttendance(employeeId);
-        if (existingAttendance) {
+        // Check if currently tracking (already checked in but not checked out)
+        const employee = await Employee.getEmployeeById(employeeId);
+        if (employee.isTracking) {
             return res.status(400).json({
                 success: false,
-                message: 'Already checked in today',
-                attendance: existingAttendance,
+                message: 'Already checked in. Please check out first.',
             });
         }
-
-        // Get employee details
-        const employee = await Employee.getEmployeeById(employeeId);
 
         // Create attendance record
         const attendance = await Attendance.createAttendance({
             employeeId,
             latitude: parseFloat(latitude),
             longitude: parseFloat(longitude),
+        });
+
+        // Start GPS tracking for this employee
+        await Employee.updateEmployee(employeeId, {
+            isTracking: true,
+            lastLatitude: parseFloat(latitude),
+            lastLongitude: parseFloat(longitude),
+            lastPingTime: new Date().toISOString(),
+            trackingStartTime: new Date().toISOString(),
         });
 
         res.json({
@@ -98,6 +103,7 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
                 name: employee.name,
                 department: employee.department,
             },
+            tracking: true, // Signal to mobile app to start background tracking
         });
     } catch (error) {
         console.error('Error checking in:', error);
@@ -161,10 +167,17 @@ router.post('/check-out', upload.single('image'), async (req, res) => {
         const updated = await Attendance.checkOut(attendance.attendanceId);
         const employee = await Employee.getEmployeeById(employeeId);
 
+        // Stop GPS tracking for this employee
+        await Employee.updateEmployee(employeeId, {
+            isTracking: false,
+            trackingEndTime: new Date().toISOString(),
+        });
+
         res.json({
             success: true,
             message: `Goodbye, ${employee.name}! Check-out successful.`,
             attendance: updated,
+            tracking: false, // Signal to mobile app to stop background tracking
         });
     } catch (error) {
         console.error('Error checking out:', error);
