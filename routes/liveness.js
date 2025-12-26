@@ -7,15 +7,23 @@ const {
     SearchFacesByImageCommand,
     DetectFacesCommand  // Added for blink detection
 } = require('@aws-sdk/client-rekognition');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
-// Configure AWS Rekognition Client (SDK v3)
-const rekognitionClient = new RekognitionClient({
+// AWS Configuration
+const awsConfig = {
     region: process.env.AWS_REGION || 'ap-south-1',
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
     }
-});
+};
+
+// Configure AWS Rekognition Client (SDK v3)
+const rekognitionClient = new RekognitionClient(awsConfig);
+
+// Configure AWS S3 Client
+const s3Client = new S3Client(awsConfig);
 
 // S3 bucket for storing liveness images
 const S3_BUCKET = process.env.AWS_LIVENESS_S3_BUCKET || 'srm-face-liveness-images';
@@ -53,6 +61,56 @@ router.post('/create-session', async (req, res) => {
             success: false,
             error: error.message,
             message: 'Failed to create liveness session'
+        });
+    }
+});
+
+/**
+ * Get presigned URLs for uploading liveness photos to S3
+ * POST /api/liveness/get-upload-urls
+ * 
+ * Returns presigned URLs that mobile can use to upload photos directly to S3
+ * This bypasses Vercel's 4.5 MB payload limit
+ */
+router.post('/get-upload-urls', async (req, res) => {
+    try {
+        const { photoCount = 2 } = req.body;
+        const sessionId = `liveness-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        const uploadUrls = [];
+        const s3Keys = [];
+
+        for (let i = 0; i < photoCount; i++) {
+            const key = `liveness/${sessionId}/photo-${i + 1}.jpg`;
+            s3Keys.push(key);
+
+            const command = new PutObjectCommand({
+                Bucket: S3_BUCKET,
+                Key: key,
+                ContentType: 'image/jpeg'
+            });
+
+            // Generate presigned URL valid for 5 minutes
+            const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+            uploadUrls.push(uploadUrl);
+        }
+
+        console.log(`[Liveness] Generated ${photoCount} presigned URLs for session ${sessionId}`);
+
+        res.json({
+            success: true,
+            sessionId: sessionId,
+            uploadUrls: uploadUrls,
+            s3Keys: s3Keys,
+            bucket: S3_BUCKET,
+            message: 'Upload URLs generated successfully'
+        });
+    } catch (error) {
+        console.error('Error generating upload URLs:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to generate upload URLs'
         });
     }
 });
@@ -393,6 +451,123 @@ router.post('/analyze-blinks', async (req, res) => {
             success: false,
             error: error.message,
             message: 'Failed to analyze photos for liveness'
+        });
+    }
+});
+
+/**
+ * Analyze liveness photos from S3 (bypasses payload limit)
+ * POST /api/liveness/analyze-from-s3
+ * 
+ * Mobile uploads photos to S3 using presigned URLs, then calls this endpoint with S3 keys
+ */
+router.post('/analyze-from-s3', async (req, res) => {
+    try {
+        const { sessionId, s3Keys } = req.body;
+
+        if (!s3Keys || !Array.isArray(s3Keys) || s3Keys.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least 2 S3 keys are required for liveness detection'
+            });
+        }
+
+        console.log(`[Liveness S3] Analyzing ${s3Keys.length} photos from S3 for session ${sessionId}`);
+
+        // Analyze each photo from S3 for eye state
+        const eyeStates = [];
+
+        for (let i = 0; i < s3Keys.length; i++) {
+            const s3Key = s3Keys[i];
+
+            try {
+                // Use S3Object reference for Rekognition (no need to download)
+                const command = new DetectFacesCommand({
+                    Image: {
+                        S3Object: {
+                            Bucket: S3_BUCKET,
+                            Name: s3Key
+                        }
+                    },
+                    Attributes: ['ALL']
+                });
+
+                const response = await rekognitionClient.send(command);
+
+                if (response.FaceDetails && response.FaceDetails.length > 0) {
+                    const face = response.FaceDetails[0];
+                    const eyesOpen = face.EyesOpen;
+                    const leftEyeOpen = eyesOpen ? eyesOpen.Value : true;
+                    const eyeConfidence = eyesOpen ? eyesOpen.Confidence : 0;
+
+                    eyeStates.push({
+                        photoIndex: i,
+                        eyesOpen: leftEyeOpen,
+                        confidence: eyeConfidence,
+                        faceDetected: true
+                    });
+
+                    console.log(`[Liveness S3] Photo ${i + 1}: Eyes ${leftEyeOpen ? 'OPEN' : 'CLOSED'} (${eyeConfidence.toFixed(1)}%)`);
+                } else {
+                    eyeStates.push({
+                        photoIndex: i,
+                        eyesOpen: null,
+                        confidence: 0,
+                        faceDetected: false
+                    });
+                    console.log(`[Liveness S3] Photo ${i + 1}: No face detected`);
+                }
+            } catch (detectError) {
+                console.error(`[Liveness S3] Error analyzing photo ${i + 1}:`, detectError.message);
+                eyeStates.push({
+                    photoIndex: i,
+                    eyesOpen: null,
+                    confidence: 0,
+                    faceDetected: false,
+                    error: detectError.message
+                });
+            }
+        }
+
+        // Count faces detected and check for variance
+        const facesDetected = eyeStates.filter(s => s.faceDetected).length;
+        const eyeConfidences = eyeStates.filter(s => s.faceDetected).map(s => s.confidence);
+
+        let hasVariance = false;
+        let varianceValue = 0;
+        if (eyeConfidences.length >= 2) {
+            const minConf = Math.min(...eyeConfidences);
+            const maxConf = Math.max(...eyeConfidences);
+            varianceValue = maxConf - minConf;
+            hasVariance = varianceValue > 1;
+        }
+
+        // Pass if face detected in both photos
+        const hasEnoughFaces = facesDetected >= 2;
+        const isLive = hasEnoughFaces || hasVariance;
+        const confidence = hasEnoughFaces ? (hasVariance ? 85 : 75) : 20;
+
+        console.log(`[Liveness S3] Result: faces=${facesDetected}, variance=${varianceValue.toFixed(2)}%, isLive: ${isLive}`);
+
+        res.json({
+            success: true,
+            isLive: isLive,
+            confidence: confidence,
+            photosAnalyzed: s3Keys.length,
+            facesDetected: facesDetected,
+            varianceDetected: varianceValue,
+            eyeStates: eyeStates,
+            message: isLive
+                ? `Liveness verified! Face detected in ${facesDetected} photos.`
+                : 'Could not verify liveness. Please ensure good lighting.'
+        });
+
+    } catch (error) {
+        console.error('[Liveness S3] Error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to analyze photos from S3'
         });
     }
 });
