@@ -104,7 +104,7 @@ router.get('/:employeeId', async (req, res) => {
 // Create new employee (admin only)
 router.post('/', async (req, res) => {
     try {
-        const { employeeId, name, email, phone, department, designation } = req.body;
+        const { employeeId, name, email, phone, department, designation, branchId } = req.body;
 
         if (!employeeId || !name) {
             return res.status(400).json({
@@ -129,6 +129,7 @@ router.post('/', async (req, res) => {
             phone,
             department,
             designation,
+            branchId, // Add branchId to employee creation
         });
 
         res.status(201).json({
