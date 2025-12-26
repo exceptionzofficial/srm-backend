@@ -344,4 +344,35 @@ router.get('/status/:employeeId', async (req, res) => {
     }
 });
 
+/**
+ * Close all active sessions and reset tracking (complete cleanup)
+ * POST /api/attendance/close-all-sessions/:employeeId
+ */
+router.post('/close-all-sessions/:employeeId', async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+
+        // Close all attendance sessions without checkout
+        const closedCount = await Attendance.closeAllActiveSessions(employeeId);
+
+        // Reset tracking status
+        await Employee.updateEmployee(employeeId, {
+            isTracking: false,
+            trackingEndTime: new Date().toISOString(),
+        });
+
+        res.json({
+            success: true,
+            message: `Closed ${closedCount} active session(s). You can now check in again.`,
+            closedSessions: closedCount,
+        });
+    } catch (error) {
+        console.error('Error closing sessions:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error closing active sessions',
+        });
+    }
+});
+
 module.exports = router;

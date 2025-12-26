@@ -34,7 +34,7 @@ async function createAttendance(attendanceData) {
 }
 
 /**
- * Check if employee already checked in today
+ * Get today's attendance for employee (latest unchecked-out session)
  */
 async function getTodayAttendance(employeeId) {
     const today = new Date().toISOString().split('T')[0];
@@ -53,7 +53,65 @@ async function getTodayAttendance(employeeId) {
     });
 
     const response = await docClient.send(command);
-    return response.Items && response.Items.length > 0 ? response.Items[0] : null;
+    const items = response.Items || [];
+
+    // Sort by checkInTime descending (latest first)
+    items.sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
+
+    // Return the latest session without checkout, or the latest session if all are checked out
+    const activeSession = items.find(item => !item.checkOutTime);
+    return activeSession || (items.length > 0 ? items[0] : null);
+}
+
+/**
+ * Get all today's attendance records for employee (for multiple sessions)
+ */
+async function getAllTodayAttendance(employeeId) {
+    const today = new Date().toISOString().split('T')[0];
+
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'employeeId = :empId AND #date = :today',
+        ExpressionAttributeNames: {
+            '#date': 'date',
+        },
+        ExpressionAttributeValues: {
+            ':empId': employeeId,
+            ':today': today,
+        },
+    });
+
+    const response = await docClient.send(command);
+    const items = response.Items || [];
+
+    // Sort by checkInTime descending (latest first)
+    return items.sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
+}
+
+/**
+ * Close all active sessions for an employee (checkout without checkout time)
+ */
+async function closeAllActiveSessions(employeeId) {
+    const allRecords = await getAllTodayAttendance(employeeId);
+    const activeRecords = allRecords.filter(r => !r.checkOutTime);
+
+    const timestamp = new Date().toISOString();
+
+    for (const record of activeRecords) {
+        const updated = {
+            ...record,
+            checkOutTime: timestamp,
+        };
+
+        const putCommand = new PutCommand({
+            TableName: TABLE_NAME,
+            Item: updated,
+        });
+
+        await docClient.send(putCommand);
+    }
+
+    return activeRecords.length;
 }
 
 /**
@@ -188,6 +246,8 @@ async function updateAttendance(attendanceId, updates) {
 module.exports = {
     createAttendance,
     getTodayAttendance,
+    getAllTodayAttendance,
+    closeAllActiveSessions,
     checkOut,
     getAttendanceHistory,
     getAttendanceByDate,
