@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const {
     RekognitionClient,
     CreateFaceLivenessSessionCommand,
@@ -10,7 +11,11 @@ const {
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
-// AWS Configuration
+// GCP Cloud Storage and Vision API (for liveness photos)
+const { Storage } = require('@google-cloud/storage');
+const vision = require('@google-cloud/vision');
+
+// AWS Configuration (for Rekognition face matching - stays in AWS)
 const awsConfig = {
     region: process.env.AWS_REGION || 'ap-south-1',
     credentials: {
@@ -22,11 +27,50 @@ const awsConfig = {
 // Configure AWS Rekognition Client (SDK v3)
 const rekognitionClient = new RekognitionClient(awsConfig);
 
-// Configure AWS S3 Client
+// Configure AWS S3 Client (legacy - still used for some features)
 const s3Client = new S3Client(awsConfig);
 
-// S3 bucket for storing liveness images
+// S3 bucket for storing liveness images (legacy)
 const S3_BUCKET = process.env.AWS_LIVENESS_S3_BUCKET || 'srm-face-liveness-images';
+
+// GCP Configuration
+const GCP_PROJECT_ID = process.env.GCP_PROJECT_ID || 'srm-attendance-482409';
+const GCS_BUCKET_NAME = process.env.GCS_BUCKET_NAME || 'srm-liveness-photos';
+
+// Initialize GCP clients
+let gcsClient;
+let visionClient;
+
+try {
+    // Check if running on Vercel with env var credentials
+    if (process.env.GCP_CREDENTIALS) {
+        // Parse credentials from environment variable
+        const credentials = JSON.parse(process.env.GCP_CREDENTIALS);
+        gcsClient = new Storage({
+            projectId: GCP_PROJECT_ID,
+            credentials: credentials
+        });
+        visionClient = new vision.ImageAnnotatorClient({
+            projectId: GCP_PROJECT_ID,
+            credentials: credentials
+        });
+        console.log('[Liveness] GCP clients initialized with env credentials');
+    } else {
+        // Local development - use key file
+        const keyPath = path.join(__dirname, '..', 'gcp-service-account.json');
+        gcsClient = new Storage({
+            projectId: GCP_PROJECT_ID,
+            keyFilename: keyPath
+        });
+        visionClient = new vision.ImageAnnotatorClient({
+            projectId: GCP_PROJECT_ID,
+            keyFilename: keyPath
+        });
+        console.log('[Liveness] GCP clients initialized with key file');
+    }
+} catch (error) {
+    console.error('[Liveness] Failed to initialize GCP clients:', error.message);
+}
 
 /**
  * Create a new Face Liveness Session
@@ -568,6 +612,156 @@ router.post('/analyze-from-s3', async (req, res) => {
             success: false,
             error: error.message,
             message: 'Failed to analyze photos from S3'
+        });
+    }
+});
+
+/**
+ * GCP LIVENESS ENDPOINTS
+ * Uses Google Cloud Storage for photos and Vision API for face detection
+ */
+
+/**
+ * Get GCP signed URLs for uploading liveness photos
+ * POST /api/liveness/gcp-upload-urls
+ */
+router.post('/gcp-upload-urls', async (req, res) => {
+    try {
+        const { photoCount = 2 } = req.body;
+        const sessionId = `liveness-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        const uploadUrls = [];
+        const gcsKeys = [];
+
+        const bucket = gcsClient.bucket(GCS_BUCKET_NAME);
+
+        for (let i = 0; i < photoCount; i++) {
+            const filename = `liveness/${sessionId}/photo-${i + 1}.jpg`;
+            gcsKeys.push(filename);
+
+            const file = bucket.file(filename);
+
+            // Generate signed URL valid for 5 minutes
+            const [signedUrl] = await file.getSignedUrl({
+                version: 'v4',
+                action: 'write',
+                expires: Date.now() + 5 * 60 * 1000, // 5 minutes
+                contentType: 'image/jpeg',
+            });
+
+            uploadUrls.push(signedUrl);
+        }
+
+        console.log(`[Liveness GCP] Generated ${photoCount} signed URLs for session ${sessionId}`);
+
+        res.json({
+            success: true,
+            sessionId: sessionId,
+            uploadUrls: uploadUrls,
+            gcsKeys: gcsKeys,
+            bucket: GCS_BUCKET_NAME,
+            message: 'GCP Upload URLs generated successfully'
+        });
+    } catch (error) {
+        console.error('[Liveness GCP] Error generating upload URLs:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to generate GCP upload URLs'
+        });
+    }
+});
+
+/**
+ * Analyze liveness photos from GCP using Vision API
+ * POST /api/liveness/gcp-analyze
+ */
+router.post('/gcp-analyze', async (req, res) => {
+    try {
+        const { sessionId, gcsKeys } = req.body;
+
+        if (!gcsKeys || !Array.isArray(gcsKeys) || gcsKeys.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least 2 GCS keys are required for liveness detection'
+            });
+        }
+
+        console.log(`[Liveness GCP] Analyzing ${gcsKeys.length} photos from GCS for session ${sessionId}`);
+
+        // Analyze each photo using Vision API
+        const faceResults = [];
+
+        for (let i = 0; i < gcsKeys.length; i++) {
+            const gcsUri = `gs://${GCS_BUCKET_NAME}/${gcsKeys[i]}`;
+
+            try {
+                // Use Vision API for face detection
+                const [result] = await visionClient.faceDetection(gcsUri);
+                const faces = result.faceAnnotations;
+
+                if (faces && faces.length > 0) {
+                    const face = faces[0];
+                    faceResults.push({
+                        photoIndex: i,
+                        faceDetected: true,
+                        confidence: face.detectionConfidence * 100,
+                        joyLikelihood: face.joyLikelihood,
+                        sorrowLikelihood: face.sorrowLikelihood,
+                        angerLikelihood: face.angerLikelihood,
+                        surpriseLikelihood: face.surpriseLikelihood,
+                        blurredLikelihood: face.blurredLikelihood,
+                    });
+                    console.log(`[Liveness GCP] Photo ${i + 1}: Face detected (${(face.detectionConfidence * 100).toFixed(1)}%)`);
+                } else {
+                    faceResults.push({
+                        photoIndex: i,
+                        faceDetected: false,
+                        confidence: 0,
+                    });
+                    console.log(`[Liveness GCP] Photo ${i + 1}: No face detected`);
+                }
+            } catch (detectError) {
+                console.error(`[Liveness GCP] Error analyzing photo ${i + 1}:`, detectError.message);
+                faceResults.push({
+                    photoIndex: i,
+                    faceDetected: false,
+                    confidence: 0,
+                    error: detectError.message
+                });
+            }
+        }
+
+        // Count faces detected
+        const facesDetected = faceResults.filter(r => r.faceDetected).length;
+        const avgConfidence = faceResults
+            .filter(r => r.faceDetected)
+            .reduce((sum, r) => sum + r.confidence, 0) / facesDetected || 0;
+
+        // Pass if face detected in both photos
+        const isLive = facesDetected >= 2;
+        const confidence = isLive ? Math.round(avgConfidence) : 20;
+
+        console.log(`[Liveness GCP] Result: faces=${facesDetected}, avgConfidence=${avgConfidence.toFixed(1)}%, isLive: ${isLive}`);
+
+        res.json({
+            success: true,
+            isLive: isLive,
+            confidence: confidence,
+            photosAnalyzed: gcsKeys.length,
+            facesDetected: facesDetected,
+            faceResults: faceResults,
+            message: isLive
+                ? `Liveness verified! Face detected in ${facesDetected} photos.`
+                : 'Could not verify liveness. Please ensure good lighting.'
+        });
+
+    } catch (error) {
+        console.error('[Liveness GCP] Error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to analyze photos from GCP'
         });
     }
 });
