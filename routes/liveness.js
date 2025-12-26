@@ -250,10 +250,10 @@ router.post('/analyze-blinks', async (req, res) => {
     try {
         const { photos, employeeId } = req.body;
 
-        if (!photos || !Array.isArray(photos) || photos.length < 3) {
+        if (!photos || !Array.isArray(photos) || photos.length < 2) {
             return res.status(400).json({
                 success: false,
-                message: 'At least 3 photos are required for blink detection'
+                message: 'At least 2 photos are required for blink detection'
             });
         }
 
@@ -355,8 +355,8 @@ router.post('/analyze-blinks', async (req, res) => {
         // Pass if: 
         // 1. Any blinks detected, OR
         // 2. Any confidence variance (even small), OR
-        // 3. Face detected in 4+ photos (consistent detection = real face)
-        const hasEnoughFaces = facesDetected >= 4;
+        // 3. Face detected in both photos (consistent detection = real face)
+        const hasEnoughFaces = facesDetected >= 2;
         const isLive = blinksDetected >= 1 || hasVariance || hasEnoughFaces;
 
         // Confidence based on what triggered the pass
