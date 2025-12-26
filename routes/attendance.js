@@ -275,4 +275,73 @@ router.put('/:attendanceId', async (req, res) => {
     }
 });
 
+/**
+ * Reset tracking status (for fixing stuck state)
+ * POST /api/attendance/reset-tracking/:employeeId
+ */
+router.post('/reset-tracking/:employeeId', async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+
+        // Reset tracking to false
+        await Employee.updateEmployee(employeeId, {
+            isTracking: false,
+            trackingEndTime: new Date().toISOString(),
+        });
+
+        res.json({
+            success: true,
+            message: 'Tracking status reset. You can now check in again.',
+        });
+    } catch (error) {
+        console.error('Error resetting tracking:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error resetting tracking status',
+        });
+    }
+});
+
+/**
+ * Get current attendance status for an employee
+ * GET /api/attendance/status/:employeeId
+ */
+router.get('/status/:employeeId', async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+
+        const employee = await Employee.getEmployeeById(employeeId);
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        const todayAttendance = await Attendance.getTodayAttendance(employeeId);
+
+        res.json({
+            success: true,
+            status: {
+                isTracking: employee.isTracking || false,
+                hasCheckedInToday: !!todayAttendance,
+                hasCheckedOutToday: !!(todayAttendance?.checkOutTime),
+                canCheckIn: !employee.isTracking,
+                canCheckOut: employee.isTracking && todayAttendance && !todayAttendance.checkOutTime,
+                todayAttendance: todayAttendance ? {
+                    attendanceId: todayAttendance.attendanceId,
+                    checkInTime: todayAttendance.checkInTime,
+                    checkOutTime: todayAttendance.checkOutTime,
+                } : null,
+            },
+        });
+    } catch (error) {
+        console.error('Error getting attendance status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting attendance status',
+        });
+    }
+});
+
 module.exports = router;
