@@ -71,6 +71,14 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
 
         // Check if currently tracking (already checked in but not checked out)
         const employee = await Employee.getEmployeeById(employeeId);
+
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee record not found. Please contact admin.',
+            });
+        }
+
         if (employee.isTracking) {
             return res.status(400).json({
                 success: false,
@@ -150,9 +158,10 @@ router.post('/check-out', upload.single('image'), async (req, res) => {
         // Get today's attendance
         const attendance = await Attendance.getTodayAttendance(employeeId);
         if (!attendance) {
+            console.log(`[Checkout Error] No attendance found for ${employeeId} on ${new Date().toISOString().split('T')[0]}`);
             return res.status(400).json({
                 success: false,
-                message: 'No check-in record found for today',
+                message: `No check-in record found for today for employee: ${employeeId}`,
             });
         }
 

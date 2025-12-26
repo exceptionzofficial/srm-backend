@@ -58,6 +58,8 @@ async function getTodayAttendance(employeeId) {
     // Sort by checkInTime descending (latest first)
     items.sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
 
+    console.log(`[Attendance] getTodayAttendance for ${employeeId} on ${today}: Found ${items.length} records`);
+
     // Return the latest session without checkout, or the latest session if all are checked out
     const activeSession = items.find(item => !item.checkOutTime);
     return activeSession || (items.length > 0 ? items[0] : null);
