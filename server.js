@@ -10,6 +10,7 @@ const attendanceRoutes = require('./routes/attendance');
 const settingsRoutes = require('./routes/settings');
 const locationRoutes = require('./routes/location');
 const branchRoutes = require('./routes/branches');
+const livenessRoutes = require('./routes/liveness');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +30,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/branches', branchRoutes);
+app.use('/api/liveness', livenessRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
