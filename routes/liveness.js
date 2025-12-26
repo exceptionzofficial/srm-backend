@@ -319,9 +319,11 @@ router.post('/analyze-blinks', async (req, res) => {
         // Count blinks (transitions from open to closed or closed to open)
         let blinksDetected = 0;
         let previousState = null;
+        let eyeConfidences = [];
 
         for (const state of eyeStates) {
             if (state.faceDetected && state.eyesOpen !== null) {
+                eyeConfidences.push(state.confidence);
                 if (previousState !== null && previousState !== state.eyesOpen) {
                     // Eye state changed - this is half a blink
                     // A full blink is open -> closed -> open (2 transitions)
@@ -334,10 +336,21 @@ router.post('/analyze-blinks', async (req, res) => {
         // Round to whole blinks
         blinksDetected = Math.floor(blinksDetected);
 
+        // Alternative liveness check: confidence variance
+        // If eye confidence varies significantly across photos, it indicates real face movement
+        let hasSignificantVariance = false;
+        if (eyeConfidences.length >= 3) {
+            const minConf = Math.min(...eyeConfidences);
+            const maxConf = Math.max(...eyeConfidences);
+            const variance = maxConf - minConf;
+            hasSignificantVariance = variance > 5; // 5% variance indicates movement
+            console.log(`[Liveness] Eye confidence variance: ${variance.toFixed(2)}% (min: ${minConf.toFixed(1)}, max: ${maxConf.toFixed(1)})`);
+        }
+
         // Determine if liveness test passed
-        // Require at least 1 blink for basic liveness, 2+ for high confidence
-        const isLive = blinksDetected >= 1;
-        const confidence = blinksDetected >= 2 ? 95 : blinksDetected >= 1 ? 80 : 20;
+        // Pass if: 1+ blinks detected OR significant confidence variance (face movement)
+        const isLive = blinksDetected >= 1 || hasSignificantVariance;
+        const confidence = blinksDetected >= 2 ? 95 : blinksDetected >= 1 ? 85 : hasSignificantVariance ? 75 : 20;
 
         // Count how many photos had face detected
         const facesDetected = eyeStates.filter(s => s.faceDetected).length;
