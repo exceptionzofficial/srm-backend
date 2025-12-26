@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const AWS = require('aws-sdk');
+const { RekognitionClient, CreateFaceLivenessSessionCommand, GetFaceLivenessSessionResultsCommand, SearchFacesByImageCommand } = require('@aws-sdk/client-rekognition');
 
-// Configure AWS Rekognition
-const rekognition = new AWS.Rekognition({
+// Configure AWS Rekognition Client (SDK v3)
+const rekognitionClient = new RekognitionClient({
     region: process.env.AWS_REGION || 'ap-south-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+    }
 });
 
 // S3 bucket for storing liveness images
@@ -20,17 +22,17 @@ router.post('/create-session', async (req, res) => {
     try {
         const { employeeId } = req.body;
 
-        const params = {
+        const command = new CreateFaceLivenessSessionCommand({
             Settings: {
                 OutputConfig: {
                     S3Bucket: S3_BUCKET,
                     S3KeyPrefix: `liveness/${employeeId || 'unknown'}/`
                 },
-                AuditImagesLimit: 4 // Store up to 4 audit images
+                AuditImagesLimit: 4
             }
-        };
+        });
 
-        const response = await rekognition.createFaceLivenessSession(params).promise();
+        const response = await rekognitionClient.send(command);
 
         console.log('Liveness session created:', response.SessionId);
 
@@ -64,11 +66,11 @@ router.get('/get-results/:sessionId', async (req, res) => {
             });
         }
 
-        const params = {
+        const command = new GetFaceLivenessSessionResultsCommand({
             SessionId: sessionId
-        };
+        });
 
-        const response = await rekognition.getFaceLivenessSessionResults(params).promise();
+        const response = await rekognitionClient.send(command);
 
         // Determine if liveness check passed (threshold: 85%)
         const isLive = response.Confidence >= 85;
@@ -83,7 +85,6 @@ router.get('/get-results/:sessionId', async (req, res) => {
             status: response.Status,
             referenceImage: response.ReferenceImage ? {
                 boundingBox: response.ReferenceImage.BoundingBox,
-                // Don't send raw bytes to client
                 hasImage: !!response.ReferenceImage.Bytes
             } : null,
             auditImagesCount: response.AuditImages ? response.AuditImages.length : 0
@@ -91,8 +92,7 @@ router.get('/get-results/:sessionId', async (req, res) => {
     } catch (error) {
         console.error('Error getting liveness results:', error);
 
-        // Handle specific error cases
-        if (error.code === 'SessionNotFoundException') {
+        if (error.name === 'SessionNotFoundException') {
             return res.status(404).json({
                 success: false,
                 error: 'Session not found or expired',
@@ -144,10 +144,10 @@ router.post('/verify', async (req, res) => {
         }
 
         // Step 1: Get liveness results
-        const livenessParams = {
+        const livenessCommand = new GetFaceLivenessSessionResultsCommand({
             SessionId: sessionId
-        };
-        const livenessResult = await rekognition.getFaceLivenessSessionResults(livenessParams).promise();
+        });
+        const livenessResult = await rekognitionClient.send(livenessCommand);
 
         if (livenessResult.Confidence < 85) {
             return res.json({
@@ -160,23 +160,22 @@ router.post('/verify', async (req, res) => {
 
         // Step 2: If liveness passed and we have a reference image, compare with registered face
         if (livenessResult.ReferenceImage && livenessResult.ReferenceImage.Bytes) {
-            const searchParams = {
+            const searchCommand = new SearchFacesByImageCommand({
                 CollectionId: process.env.REKOGNITION_COLLECTION_ID || 'srm-employees-faces',
                 Image: {
                     Bytes: livenessResult.ReferenceImage.Bytes
                 },
                 MaxFaces: 1,
                 FaceMatchThreshold: 80
-            };
+            });
 
             try {
-                const searchResult = await rekognition.searchFacesByImage(searchParams).promise();
+                const searchResult = await rekognitionClient.send(searchCommand);
 
                 if (searchResult.FaceMatches && searchResult.FaceMatches.length > 0) {
                     const match = searchResult.FaceMatches[0];
                     const matchedEmployeeId = match.Face.ExternalImageId;
 
-                    // Check if matched employee is the expected one
                     if (matchedEmployeeId === employeeId) {
                         return res.json({
                             success: true,
@@ -205,7 +204,6 @@ router.post('/verify', async (req, res) => {
                 }
             } catch (faceError) {
                 console.error('Face search error:', faceError);
-                // If face comparison fails, still return liveness success
                 return res.json({
                     success: true,
                     isLive: true,
