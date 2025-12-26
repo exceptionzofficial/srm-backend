@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { RekognitionClient, CreateFaceLivenessSessionCommand, GetFaceLivenessSessionResultsCommand, SearchFacesByImageCommand } = require('@aws-sdk/client-rekognition');
+const {
+    RekognitionClient,
+    CreateFaceLivenessSessionCommand,
+    GetFaceLivenessSessionResultsCommand,
+    SearchFacesByImageCommand,
+    DetectFacesCommand  // Added for blink detection
+} = require('@aws-sdk/client-rekognition');
 
 // Configure AWS Rekognition Client (SDK v3)
 const rekognitionClient = new RekognitionClient({
@@ -229,6 +235,138 @@ router.post('/verify', async (req, res) => {
             success: false,
             error: error.message,
             message: 'Failed to verify liveness'
+        });
+    }
+});
+
+/**
+ * Analyze photos for blink detection (Custom Liveness Check)
+ * POST /api/liveness/analyze-blinks
+ * 
+ * Takes multiple photos captured over time and analyzes eye state changes
+ * to detect if the person blinked (proving they are real, not a photo)
+ */
+router.post('/analyze-blinks', async (req, res) => {
+    try {
+        const { photos, employeeId } = req.body;
+
+        if (!photos || !Array.isArray(photos) || photos.length < 3) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least 3 photos are required for blink detection'
+            });
+        }
+
+        console.log(`[Liveness] Analyzing ${photos.length} photos for blink detection`);
+
+        // Analyze each photo for eye state
+        const eyeStates = [];
+
+        for (let i = 0; i < photos.length; i++) {
+            const photo = photos[i];
+
+            // Convert base64 to buffer
+            const base64Data = photo.replace(/^data:image\/\w+;base64,/, '');
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+
+            try {
+                const command = new DetectFacesCommand({
+                    Image: {
+                        Bytes: imageBuffer
+                    },
+                    Attributes: ['ALL'] // Request all facial attributes including eyes open/closed
+                });
+
+                const response = await rekognitionClient.send(command);
+
+                if (response.FaceDetails && response.FaceDetails.length > 0) {
+                    const face = response.FaceDetails[0];
+
+                    // Check if eyes are open or closed
+                    const eyesOpen = face.EyesOpen;
+                    const leftEyeOpen = eyesOpen ? eyesOpen.Value : true;
+                    const eyeConfidence = eyesOpen ? eyesOpen.Confidence : 0;
+
+                    eyeStates.push({
+                        photoIndex: i,
+                        eyesOpen: leftEyeOpen,
+                        confidence: eyeConfidence,
+                        faceDetected: true
+                    });
+
+                    console.log(`[Liveness] Photo ${i + 1}: Eyes ${leftEyeOpen ? 'OPEN' : 'CLOSED'} (${eyeConfidence.toFixed(1)}%)`);
+                } else {
+                    eyeStates.push({
+                        photoIndex: i,
+                        eyesOpen: null,
+                        confidence: 0,
+                        faceDetected: false
+                    });
+                    console.log(`[Liveness] Photo ${i + 1}: No face detected`);
+                }
+            } catch (detectError) {
+                console.error(`[Liveness] Error analyzing photo ${i + 1}:`, detectError.message);
+                eyeStates.push({
+                    photoIndex: i,
+                    eyesOpen: null,
+                    confidence: 0,
+                    faceDetected: false,
+                    error: detectError.message
+                });
+            }
+        }
+
+        // Count blinks (transitions from open to closed or closed to open)
+        let blinksDetected = 0;
+        let previousState = null;
+
+        for (const state of eyeStates) {
+            if (state.faceDetected && state.eyesOpen !== null) {
+                if (previousState !== null && previousState !== state.eyesOpen) {
+                    // Eye state changed - this is half a blink
+                    // A full blink is open -> closed -> open (2 transitions)
+                    blinksDetected += 0.5;
+                }
+                previousState = state.eyesOpen;
+            }
+        }
+
+        // Round to whole blinks
+        blinksDetected = Math.floor(blinksDetected);
+
+        // Determine if liveness test passed
+        // Require at least 1 blink for basic liveness, 2+ for high confidence
+        const isLive = blinksDetected >= 1;
+        const confidence = blinksDetected >= 2 ? 95 : blinksDetected >= 1 ? 80 : 20;
+
+        // Count how many photos had face detected
+        const facesDetected = eyeStates.filter(s => s.faceDetected).length;
+
+        console.log(`[Liveness] Result: ${blinksDetected} blinks detected, isLive: ${isLive}`);
+
+        res.json({
+            success: true,
+            isLive: isLive,
+            blinksDetected: blinksDetected,
+            confidence: confidence,
+            photosAnalyzed: photos.length,
+            facesDetected: facesDetected,
+            eyeStates: eyeStates.map(s => ({
+                photoIndex: s.photoIndex,
+                eyesOpen: s.eyesOpen,
+                faceDetected: s.faceDetected
+            })),
+            message: isLive
+                ? `Liveness verified! ${blinksDetected} blink(s) detected.`
+                : 'No blinks detected. Please blink your eyes during the check.'
+        });
+
+    } catch (error) {
+        console.error('[Liveness] Blink analysis error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to analyze photos for liveness'
         });
     }
 });
