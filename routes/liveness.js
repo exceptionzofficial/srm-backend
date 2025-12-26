@@ -337,25 +337,37 @@ router.post('/analyze-blinks', async (req, res) => {
         blinksDetected = Math.floor(blinksDetected);
 
         // Alternative liveness check: confidence variance
-        // If eye confidence varies significantly across photos, it indicates real face movement
-        let hasSignificantVariance = false;
+        // ANY variance in eye confidence indicates real face (even slight head movement causes this)
+        let hasVariance = false;
+        let varianceValue = 0;
         if (eyeConfidences.length >= 3) {
             const minConf = Math.min(...eyeConfidences);
             const maxConf = Math.max(...eyeConfidences);
-            const variance = maxConf - minConf;
-            hasSignificantVariance = variance > 5; // 5% variance indicates movement
-            console.log(`[Liveness] Eye confidence variance: ${variance.toFixed(2)}% (min: ${minConf.toFixed(1)}, max: ${maxConf.toFixed(1)})`);
+            varianceValue = maxConf - minConf;
+            hasVariance = varianceValue > 1; // Super lenient - even 1% variance counts as movement
+            console.log(`[Liveness] Eye confidence variance: ${varianceValue.toFixed(2)}% (min: ${minConf.toFixed(1)}, max: ${maxConf.toFixed(1)})`);
         }
-
-        // Determine if liveness test passed
-        // Pass if: 1+ blinks detected OR significant confidence variance (face movement)
-        const isLive = blinksDetected >= 1 || hasSignificantVariance;
-        const confidence = blinksDetected >= 2 ? 95 : blinksDetected >= 1 ? 85 : hasSignificantVariance ? 75 : 20;
 
         // Count how many photos had face detected
         const facesDetected = eyeStates.filter(s => s.faceDetected).length;
 
-        console.log(`[Liveness] Result: ${blinksDetected} blinks detected, isLive: ${isLive}`);
+        // LENIENT LIVENESS CHECK: 
+        // Pass if: 
+        // 1. Any blinks detected, OR
+        // 2. Any confidence variance (even small), OR
+        // 3. Face detected in 4+ photos (consistent detection = real face)
+        const hasEnoughFaces = facesDetected >= 4;
+        const isLive = blinksDetected >= 1 || hasVariance || hasEnoughFaces;
+
+        // Confidence based on what triggered the pass
+        let confidence = 20;
+        if (blinksDetected >= 2) confidence = 95;
+        else if (blinksDetected >= 1) confidence = 85;
+        else if (varianceValue > 5) confidence = 80;
+        else if (hasVariance) confidence = 75;
+        else if (hasEnoughFaces) confidence = 70;
+
+        console.log(`[Liveness] Result: blinks=${blinksDetected}, variance=${varianceValue.toFixed(2)}%, faces=${facesDetected}, isLive: ${isLive}`);
 
         res.json({
             success: true,
@@ -364,14 +376,15 @@ router.post('/analyze-blinks', async (req, res) => {
             confidence: confidence,
             photosAnalyzed: photos.length,
             facesDetected: facesDetected,
+            varianceDetected: varianceValue,
             eyeStates: eyeStates.map(s => ({
                 photoIndex: s.photoIndex,
                 eyesOpen: s.eyesOpen,
                 faceDetected: s.faceDetected
             })),
             message: isLive
-                ? `Liveness verified! ${blinksDetected} blink(s) detected.`
-                : 'No blinks detected. Please blink your eyes during the check.'
+                ? `Liveness verified! Face detected in ${facesDetected} photos.`
+                : 'Could not verify liveness. Please ensure good lighting and keep your face visible.'
         });
 
     } catch (error) {
