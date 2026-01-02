@@ -31,6 +31,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/liveness', livenessRoutes);
+app.use('/api/salary', require('./routes/salary'));
 
 // Health check
 app.get('/api/health', (req, res) => {

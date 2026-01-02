@@ -5,7 +5,7 @@ const Employee = require('../models/Employee');
 // Verify employee ID exists (for mobile app registration)
 router.post('/verify-id', async (req, res) => {
     try {
-        const { employeeId } = req.body;
+        const { employeeId, branchId } = req.body;
 
         if (!employeeId) {
             return res.status(400).json({
@@ -30,6 +30,14 @@ router.post('/verify-id', async (req, res) => {
             });
         }
 
+        // Verify Branch (if provided)
+        if (branchId && employee.branchId && employee.branchId !== branchId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Employee not found in this branch.',
+            });
+        }
+
         // Check if face is already registered
         if (employee.faceId) {
             return res.status(400).json({
@@ -47,6 +55,7 @@ router.post('/verify-id', async (req, res) => {
                 name: employee.name,
                 department: employee.department,
                 designation: employee.designation,
+                branchId: employee.branchId,
             },
         });
     } catch (error) {
