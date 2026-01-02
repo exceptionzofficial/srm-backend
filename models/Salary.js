@@ -134,18 +134,11 @@ async function createSalary(data) {
 }
 
 async function getSalariesByEmployeeId(employeeId) {
-    console.error('DEBUG: Entering getSalariesByEmployeeId', employeeId);
-    // efficient scan or query using GSI
-    // assuming GSI name 'employeeId-index'
-    // efficient scan or query using GSI
-    // assuming GSI name 'employeeId-index'
-    const fs = require('fs');
-    fs.appendFileSync('debug.log', `Entering getSalariesByEmployeeId ${employeeId}\n`);
-    fs.appendFileSync('debug.log', `QueryCommand type: ${typeof QueryCommand}\n`);
+    console.log('Fetching salaries for:', employeeId);
     try {
         const command = new QueryCommand({
             TableName: TABLE_NAME,
-            IndexName: 'employeeId-index',
+            IndexName: 'employeeId-index', // Ensure this GSI exists
             KeyConditionExpression: 'employeeId = :eid',
             ExpressionAttributeValues: { ':eid': employeeId }
         });
@@ -153,32 +146,17 @@ async function getSalariesByEmployeeId(employeeId) {
         const response = await docClient.send(command);
         return response.Items;
     } catch (err) {
-        // Fallback
-        const fs = require('fs'); // Ensure fs is available here just in case scope is weird (though it should be fine)
-        fs.appendFileSync('debug.log', `Query failed/skipped, error: ${err.message}\n`);
-        console.log('Query failed/skipped, error:', err.message);
-        // If index not found, scan
-        // If index not found, scan
-        // If index not found, scan
-        // console.log('Query failed, attempting scan...');
-        fs.appendFileSync('debug.log', 'Query failed, attempting scan...\n');
+        console.warn('Query failed (GSI might be missing), falling back to Scan:', err.message);
         try {
-            // console.log('Creating ScanCommand...');
-            fs.appendFileSync('debug.log', 'Creating ScanCommand...\n');
             const scanCmd = new ScanCommand({
                 TableName: TABLE_NAME,
                 FilterExpression: 'employeeId = :eid',
                 ExpressionAttributeValues: { ':eid': employeeId }
             });
-            // console.log('ScanCommand created via new ScanCommand(). Sending command...');
-            fs.appendFileSync('debug.log', 'ScanCommand created. Sending command...\n');
             const res = await docClient.send(scanCmd);
-            // console.log('Scan successful');
-            fs.appendFileSync('debug.log', 'Scan successful\n');
             return res.Items;
         } catch (scanError) {
-            // console.error('Scan failed:', scanError);
-            fs.appendFileSync('debug.log', `Scan failed: ${scanError.message}\n`);
+            console.error('Scan failed:', scanError);
             throw scanError;
         }
     }

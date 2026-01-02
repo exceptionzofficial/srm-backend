@@ -56,6 +56,7 @@ router.post('/verify-id', async (req, res) => {
                 department: employee.department,
                 designation: employee.designation,
                 branchId: employee.branchId,
+                workMode: employee.workMode || 'OFFICE',
             },
         });
     } catch (error) {
@@ -113,7 +114,7 @@ router.get('/:employeeId', async (req, res) => {
 // Create new employee (admin only)
 router.post('/', async (req, res) => {
     try {
-        const { employeeId, name, email, phone, department, designation, branchId } = req.body;
+        const { employeeId, name, email, phone, department, designation, branchId, workMode } = req.body;
 
         if (!employeeId || !name) {
             return res.status(400).json({
@@ -138,7 +139,8 @@ router.post('/', async (req, res) => {
             phone,
             department,
             designation,
-            branchId, // Add branchId to employee creation
+            branchId,
+            workMode, // Add workMode (OFFICE, FIELD_SALES, REMOTE)
         });
 
         res.status(201).json({

@@ -15,7 +15,7 @@ const upload = multer({ storage: multer.memoryStorage() });
  */
 router.post('/check-in', upload.single('image'), async (req, res) => {
     try {
-        const { latitude, longitude, imageBase64 } = req.body;
+        const { latitude, longitude, imageBase64, type = 'OFFICE' } = req.body; // type: OFFICE | TRAVEL
 
         if (!latitude || !longitude) {
             return res.status(400).json({
@@ -24,27 +24,8 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             });
         }
 
-        // Check geo-fence
-        const geofence = await getGeofenceSettings();
-        if (geofence.isConfigured) {
-            const locationCheck = isWithinGeofence(
-                parseFloat(latitude),
-                parseFloat(longitude),
-                geofence.officeLat,
-                geofence.officeLng,
-                geofence.radiusMeters
-            );
-
-            if (!locationCheck.isWithin) {
-                return res.status(403).json({
-                    success: false,
-                    message: `You are too far from the office! Distance: ${locationCheck.distance}m`,
-                    withinRange: false,
-                });
-            }
-        }
-
-        // Get image buffer
+        // Get employee ID first (needed for permission check)
+        // We need to parse the image to search face FIRST to know who it is
         let imageBuffer;
         if (req.file) {
             imageBuffer = req.file.buffer;
@@ -66,10 +47,7 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
                 message: 'Face not recognized. Please register first.',
             });
         }
-
         const employeeId = faceResult.employeeId;
-
-        // Check if currently tracking (already checked in but not checked out)
         const employee = await Employee.getEmployeeById(employeeId);
 
         if (!employee) {
@@ -78,6 +56,46 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
                 message: 'Employee record not found. Please contact admin.',
             });
         }
+
+        // PERMISSION CHECK FOR TRAVEL MODE
+        if (type === 'TRAVEL') {
+            const allowedModes = ['FIELD_SALES', 'REMOTE'];
+            const employeeMode = employee.workMode || 'OFFICE';
+            if (!allowedModes.includes(employeeMode)) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Restricted: You are not authorized for "On Duty" check-in.',
+                });
+            }
+            // If authorized, we SKIP geofence check
+        } else {
+            // OFFICE MODE - Enforce Geofence
+            const geofence = await getGeofenceSettings();
+            if (geofence.isConfigured) {
+                const locationCheck = isWithinGeofence(
+                    parseFloat(latitude),
+                    parseFloat(longitude),
+                    geofence.officeLat,
+                    geofence.officeLng,
+                    geofence.radiusMeters
+                );
+
+                if (!locationCheck.isWithin) {
+                    return res.status(403).json({
+                        success: false,
+                        message: `You are too far from the office! Distance: ${locationCheck.distance}m`,
+                        withinRange: false,
+                    });
+                }
+            }
+        }
+
+
+
+        // Face verification handled above
+
+        // Check if currently tracking (already checked in but not checked out)
+        // Employee fetched above for permission check
 
         if (employee.isTracking) {
             return res.status(400).json({
@@ -100,6 +118,7 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             employeeId,
             latitude: parseFloat(latitude),
             longitude: parseFloat(longitude),
+            type, // Store OFFICE or TRAVEL
         });
 
         // Start GPS tracking for this employee

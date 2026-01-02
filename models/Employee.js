@@ -33,6 +33,7 @@ async function createEmployee(employeeData) {
         ...employeeData,
         faceId: null,
         status: employeeData.status || 'active',
+        workMode: employeeData.workMode || 'OFFICE', // Default to OFFICE
         createdAt: timestamp,
         updatedAt: timestamp,
     };
