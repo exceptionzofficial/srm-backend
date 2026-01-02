@@ -86,6 +86,15 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             });
         }
 
+        // Validate Branch
+        const requestBranchId = req.body.branchId;
+        if (requestBranchId && employee.branchId && employee.branchId !== requestBranchId) {
+            return res.status(403).json({
+                success: false,
+                message: `You belong to a different branch. Please select the correct branch.`,
+            });
+        }
+
         // Create attendance record
         const attendance = await Attendance.createAttendance({
             employeeId,
