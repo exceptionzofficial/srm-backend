@@ -347,7 +347,7 @@ router.get('/status/:employeeId', async (req, res) => {
     try {
         const { employeeId } = req.params;
 
-        const employee = await Employee.getEmployeeById(employeeId);
+        let employee = await Employee.getEmployeeById(employeeId);
         if (!employee) {
             return res.status(404).json({
                 success: false,
@@ -356,15 +356,58 @@ router.get('/status/:employeeId', async (req, res) => {
         }
 
         const todayAttendance = await Attendance.getTodayAttendance(employeeId);
+        const now = new Date();
+        let isTracking = employee.isTracking || false;
+        let autoCheckedOut = false;
+
+        // CHECK FOR INACTIVITY (Auto-Checkout Logic)
+        if (isTracking && employee.lastPingTime) {
+            const lastPing = new Date(employee.lastPingTime);
+            const diffMinutes = (now - lastPing) / (1000 * 60);
+
+            if (diffMinutes > 10) {
+                console.log(`[Auto-Checkout] User ${employee.name} inactive for ${Math.round(diffMinutes)} mins. stopping tracking.`);
+
+                // Auto-stop tracking
+                await Employee.updateEmployee(employeeId, {
+                    isTracking: false,
+                    lastPingTime: employee.lastPingTime // Keep original ping time for resume logic
+                });
+
+                employee = await Employee.getEmployeeById(employeeId); // Refresh
+                isTracking = false;
+                autoCheckedOut = true;
+            }
+        }
+
+        // Check if eligible for Resume
+        // Condition: Not tracking, Has open attendance today, Last ping was within 20 mins (or just allows resume if open?)
+        // User requested: "rejoin option withi 10 minutes"
+        let canResume = false;
+        if (!isTracking && todayAttendance && !todayAttendance.checkOutTime) {
+            if (employee.lastPingTime) {
+                const lastPing = new Date(employee.lastPingTime);
+                const diffMinutes = (now - lastPing) / (1000 * 60);
+                // Allow resume if inactive for less than 30 mins (10 min auto-checkout + 20 min grace)
+                if (diffMinutes < 30) {
+                    canResume = true;
+                }
+            } else {
+                // Fallback if no ping time but open session?
+                canResume = true;
+            }
+        }
 
         res.json({
             success: true,
             status: {
-                isTracking: employee.isTracking || false,
+                isTracking: isTracking,
+                autoCheckedOut: autoCheckedOut,
+                canResume: canResume,
                 hasCheckedInToday: !!todayAttendance,
                 hasCheckedOutToday: !!(todayAttendance?.checkOutTime),
-                canCheckIn: !employee.isTracking,
-                canCheckOut: employee.isTracking && todayAttendance && !todayAttendance.checkOutTime,
+                canCheckIn: !isTracking && !canResume,
+                canCheckOut: isTracking || canResume, // Can checkout even if paused
                 todayAttendance: todayAttendance ? {
                     attendanceId: todayAttendance.attendanceId,
                     checkInTime: todayAttendance.checkInTime,
@@ -378,6 +421,78 @@ router.get('/status/:employeeId', async (req, res) => {
             success: false,
             message: 'Error getting attendance status',
         });
+    }
+});
+
+/**
+ * Resume Session (Rejoin)
+ * POST /api/attendance/resume-session
+ */
+router.post('/resume-session', async (req, res) => {
+    try {
+        const { employeeId } = req.body;
+
+        const employee = await Employee.getEmployeeById(employeeId);
+        if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+        // Re-enable tracking
+        await Employee.updateEmployee(employeeId, {
+            isTracking: true,
+            lastPingTime: new Date().toISOString(),
+            trackingStartTime: new Date().toISOString(), // Optional: reset start time or keep original? Keeping original is better logic usually, but here we just restart tracking.
+        });
+
+        res.json({
+            success: true,
+            message: 'Session resumed successfully',
+            tracking: true
+        });
+
+    } catch (error) {
+        console.error('Error resuming session:', error);
+        res.status(500).json({ success: false, message: 'Error resuming session' });
+    }
+});
+
+/**
+ * Verify Identity for View-Only Access
+ * POST /api/attendance/verify-view-access
+ */
+router.post('/verify-view-access', upload.single('image'), async (req, res) => {
+    try {
+        const { imageBase64, employeeId } = req.body;
+
+        // Get image buffer
+        let imageBuffer;
+        if (req.file) {
+            imageBuffer = req.file.buffer;
+        } else if (imageBase64) {
+            const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+            imageBuffer = Buffer.from(base64Data, 'base64');
+        } else {
+            return res.status(400).json({ success: false, message: 'Image is required' });
+        }
+
+        // Verify face
+        const faceResult = await searchFace(imageBuffer);
+        if (!faceResult.success) {
+            return res.status(404).json({ success: false, message: 'Face not recognized' });
+        }
+
+        // Optional: Ensure the recognized face matches the requested employeeId (if provided)
+        if (employeeId && faceResult.employeeId !== employeeId) {
+            return res.status(403).json({ success: false, message: 'Face does not match the provided Employee ID' });
+        }
+
+        res.json({
+            success: true,
+            message: 'Verification successful',
+            employeeId: faceResult.employeeId
+        });
+
+    } catch (error) {
+        console.error('Error verification:', error);
+        res.status(500).json({ success: false, message: 'Verification failed' });
     }
 });
 
