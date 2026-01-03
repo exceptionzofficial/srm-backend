@@ -91,6 +91,48 @@ async function getAllTodayAttendance(employeeId) {
 }
 
 /**
+ * Get any open/incomplete session for employee (no checkout time) - regardless of date
+ */
+async function getOpenSession(employeeId) {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'employeeId = :empId AND attribute_not_exists(checkOutTime)',
+        ExpressionAttributeValues: {
+            ':empId': employeeId,
+        },
+    });
+
+    const response = await docClient.send(command);
+    const items = response.Items || [];
+
+    // Also check for null checkOutTime (in case it exists but is null)
+    const commandNull = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'employeeId = :empId AND checkOutTime = :nullVal',
+        ExpressionAttributeValues: {
+            ':empId': employeeId,
+            ':nullVal': null,
+        },
+    });
+
+    const responseNull = await docClient.send(commandNull);
+    const itemsNull = responseNull.Items || [];
+
+    // Combine and deduplicate
+    const allOpen = [...items, ...itemsNull];
+    const uniqueOpen = allOpen.filter((item, index, self) =>
+        index === self.findIndex((t) => t.attendanceId === item.attendanceId)
+    );
+
+    // Sort by checkInTime descending (latest first)
+    uniqueOpen.sort((a, b) => new Date(b.checkInTime) - new Date(a.checkInTime));
+
+    console.log(`[Attendance] getOpenSession for ${employeeId}: Found ${uniqueOpen.length} open sessions`);
+
+    return uniqueOpen.length > 0 ? uniqueOpen[0] : null;
+}
+
+/**
  * Close all active sessions for an employee (checkout without checkout time)
  */
 async function closeAllActiveSessions(employeeId) {
@@ -249,6 +291,7 @@ module.exports = {
     createAttendance,
     getTodayAttendance,
     getAllTodayAttendance,
+    getOpenSession,
     closeAllActiveSessions,
     checkOut,
     getAttendanceHistory,

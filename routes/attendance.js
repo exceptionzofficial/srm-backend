@@ -356,6 +356,7 @@ router.get('/status/:employeeId', async (req, res) => {
         }
 
         const todayAttendance = await Attendance.getTodayAttendance(employeeId);
+        const openSession = await Attendance.getOpenSession(employeeId); // Any open session regardless of date
         const now = new Date();
         let isTracking = employee.isTracking || false;
         let autoCheckedOut = false;
@@ -415,8 +416,14 @@ router.get('/status/:employeeId', async (req, res) => {
                 canResume: canResume,
                 hasCheckedInToday: !!todayAttendance,
                 hasCheckedOutToday: !!(todayAttendance?.checkOutTime),
-                canCheckIn: !isTracking && !canResume,
-                canCheckOut: isTracking || canResume, // Can checkout even if paused
+                hasOpenSession: !!openSession, // Any incomplete session regardless of date
+                canCheckIn: !isTracking && !canResume && !openSession,
+                canCheckOut: isTracking || canResume || !!openSession, // Can checkout if any open session
+                openSession: openSession ? {
+                    attendanceId: openSession.attendanceId,
+                    checkInTime: openSession.checkInTime,
+                    date: openSession.date,
+                } : null,
                 todayAttendance: todayAttendance ? {
                     attendanceId: todayAttendance.attendanceId,
                     checkInTime: todayAttendance.checkInTime,
