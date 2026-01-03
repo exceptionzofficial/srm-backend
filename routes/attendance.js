@@ -400,6 +400,15 @@ router.get('/status/:employeeId', async (req, res) => {
 
         res.json({
             success: true,
+            employee: {
+                employeeId: employee.employeeId,
+                name: employee.name,
+                department: employee.department,
+                designation: employee.designation,
+                branchId: employee.branchId,
+                faceId: employee.faceId,
+                isTracking: isTracking,
+            },
             status: {
                 isTracking: isTracking,
                 autoCheckedOut: autoCheckedOut,

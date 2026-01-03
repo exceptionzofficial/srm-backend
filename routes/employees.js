@@ -44,6 +44,15 @@ router.post('/verify-id', async (req, res) => {
                 success: false,
                 message: 'Face already registered for this employee.',
                 alreadyRegistered: true,
+                employee: {
+                    employeeId: employee.employeeId,
+                    name: employee.name,
+                    department: employee.department,
+                    designation: employee.designation,
+                    branchId: employee.branchId,
+                    workMode: employee.workMode || 'OFFICE',
+                    faceId: employee.faceId,
+                },
             });
         }
 
