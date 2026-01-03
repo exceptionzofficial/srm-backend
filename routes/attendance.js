@@ -183,13 +183,13 @@ router.post('/check-out', upload.single('image'), async (req, res) => {
 
         const employeeId = faceResult.employeeId;
 
-        // Get today's attendance
-        const attendance = await Attendance.getTodayAttendance(employeeId);
+        // Get any open session (not just today)
+        const attendance = await Attendance.getOpenSession(employeeId);
         if (!attendance) {
-            console.log(`[Checkout Error] No attendance found for ${employeeId} on ${new Date().toISOString().split('T')[0]}`);
+            console.log(`[Checkout Error] No open session found for ${employeeId}`);
             return res.status(400).json({
                 success: false,
-                message: `No check-in record found for today for employee: ${employeeId}`,
+                message: `No active check-in session found for employee: ${employeeId}`,
             });
         }
 
