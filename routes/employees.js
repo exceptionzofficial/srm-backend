@@ -1,6 +1,25 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const { v4: uuidv4 } = require('uuid');
+const { PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { GetObjectCommand } = require('@aws-sdk/client-s3');
 const Employee = require('../models/Employee');
+const { s3Client, S3_EMPLOYEE_PHOTOS_BUCKET } = require('../config/aws');
+
+// Configure multer for memory storage
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed'), false);
+        }
+    },
+});
 
 // Verify employee ID exists (for mobile app registration)
 router.post('/verify-id', async (req, res) => {
@@ -120,10 +139,10 @@ router.get('/:employeeId', async (req, res) => {
     }
 });
 
-// Create new employee (admin only)
-router.post('/', async (req, res) => {
+// Create new employee (admin only) - with photo upload
+router.post('/', upload.single('photo'), async (req, res) => {
     try {
-        const { employeeId, name, email, phone, department, designation, branchId, workMode } = req.body;
+        const { employeeId, name, email, phone, department, designation, branchId, workMode, panNumber, aadharNumber } = req.body;
 
         if (!employeeId || !name) {
             return res.status(400).json({
@@ -141,6 +160,23 @@ router.post('/', async (req, res) => {
             });
         }
 
+        let photoUrl = null;
+
+        // Upload photo to S3 if provided
+        if (req.file) {
+            const fileExtension = req.file.originalname.split('.').pop();
+            const photoKey = `photos/${employeeId}-${uuidv4()}.${fileExtension}`;
+
+            await s3Client.send(new PutObjectCommand({
+                Bucket: S3_EMPLOYEE_PHOTOS_BUCKET,
+                Key: photoKey,
+                Body: req.file.buffer,
+                ContentType: req.file.mimetype,
+            }));
+
+            photoUrl = `https://${S3_EMPLOYEE_PHOTOS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${photoKey}`;
+        }
+
         const employee = await Employee.createEmployee({
             employeeId,
             name,
@@ -149,7 +185,10 @@ router.post('/', async (req, res) => {
             department,
             designation,
             branchId,
-            workMode, // Add workMode (OFFICE, FIELD_SALES, REMOTE)
+            workMode,
+            panNumber: panNumber || null,
+            aadharNumber: aadharNumber || null,
+            photoUrl,
         });
 
         res.status(201).json({
@@ -166,11 +205,11 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Update employee
-router.put('/:employeeId', async (req, res) => {
+// Update employee - with photo upload
+router.put('/:employeeId', upload.single('photo'), async (req, res) => {
     try {
         const { employeeId } = req.params;
-        const updates = req.body;
+        const updates = { ...req.body };
 
         const existing = await Employee.getEmployeeById(employeeId);
         if (!existing) {
@@ -178,6 +217,21 @@ router.put('/:employeeId', async (req, res) => {
                 success: false,
                 message: 'Employee not found',
             });
+        }
+
+        // Upload new photo to S3 if provided
+        if (req.file) {
+            const fileExtension = req.file.originalname.split('.').pop();
+            const photoKey = `photos/${employeeId}-${uuidv4()}.${fileExtension}`;
+
+            await s3Client.send(new PutObjectCommand({
+                Bucket: S3_EMPLOYEE_PHOTOS_BUCKET,
+                Key: photoKey,
+                Body: req.file.buffer,
+                ContentType: req.file.mimetype,
+            }));
+
+            updates.photoUrl = `https://${S3_EMPLOYEE_PHOTOS_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${photoKey}`;
         }
 
         const employee = await Employee.updateEmployee(employeeId, updates);
