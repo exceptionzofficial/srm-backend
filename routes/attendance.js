@@ -50,6 +50,16 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
         const employeeId = faceResult.employeeId;
         console.log(`[Check-in] Face recognized for employeeId: "${employeeId}"`);
 
+        // Validate that recognized face matches expected employee (if provided)
+        const expectedEmployeeId = req.body.expectedEmployeeId;
+        if (expectedEmployeeId && employeeId !== expectedEmployeeId) {
+            console.log(`[Check-in] Face mismatch! Expected: "${expectedEmployeeId}", Got: "${employeeId}"`);
+            return res.status(403).json({
+                success: false,
+                message: `Face verification failed. The face recognized belongs to ${employeeId}, but you are logged in as ${expectedEmployeeId}. Please use your own face.`,
+            });
+        }
+
         const employee = await Employee.getEmployeeById(employeeId);
         console.log(`[Check-in] Employee lookup result:`, employee ? `Found: ${employee.name}` : 'NOT FOUND');
 
