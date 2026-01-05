@@ -48,12 +48,15 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             });
         }
         const employeeId = faceResult.employeeId;
+        console.log(`[Check-in] Face recognized for employeeId: "${employeeId}"`);
+
         const employee = await Employee.getEmployeeById(employeeId);
+        console.log(`[Check-in] Employee lookup result:`, employee ? `Found: ${employee.name}` : 'NOT FOUND');
 
         if (!employee) {
             return res.status(404).json({
                 success: false,
-                message: 'Employee record not found. Please contact admin.',
+                message: `Employee record not found for ID: ${employeeId}. Please contact admin.`,
             });
         }
 
