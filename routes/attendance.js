@@ -458,6 +458,12 @@ router.get('/status/:employeeId', async (req, res) => {
                 } : null,
             },
         });
+    } catch (error) {
+        console.error('Error getting attendance status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting attendance status',
+        });
     }
 });
 
