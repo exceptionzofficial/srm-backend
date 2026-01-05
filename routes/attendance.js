@@ -422,6 +422,18 @@ router.get('/status/:employeeId', async (req, res) => {
                 branchId: employee.branchId,
                 faceId: employee.faceId,
                 isTracking: isTracking,
+                // Documents
+                panNumber: employee.panNumber,
+                aadharNumber: employee.aadharNumber,
+                photoUrl: employee.photoUrl,
+                // Statutory
+                uan: employee.uan,
+                esicIP: employee.esicIP,
+                // Bank
+                bankAccount: employee.bankAccount,
+                ifscCode: employee.ifscCode,
+                paymentMode: employee.paymentMode,
+                joinedDate: employee.joinedDate,
             },
             status: {
                 isTracking: isTracking,
