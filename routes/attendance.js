@@ -369,6 +369,7 @@ router.get('/status/:employeeId', async (req, res) => {
         }
 
         const todayAttendance = await Attendance.getTodayAttendance(employeeId);
+        const allTodaySessions = await Attendance.getAllTodayAttendance(employeeId); // NEW: Get all sessions
         const openSession = await Attendance.getOpenSession(employeeId); // Any open session regardless of date
         const now = new Date();
         let isTracking = employee.isTracking || false;
@@ -444,6 +445,7 @@ router.get('/status/:employeeId', async (req, res) => {
                 hasOpenSession: !!openSession, // Any incomplete session regardless of date
                 canCheckIn: !isTracking && !canResume && !openSession,
                 canCheckOut: isTracking || canResume || !!openSession, // Can checkout if any open session
+                attendanceRecords: allTodaySessions, // Return full list
                 openSession: openSession ? {
                     attendanceId: openSession.attendanceId,
                     checkInTime: openSession.checkInTime,
@@ -455,12 +457,6 @@ router.get('/status/:employeeId', async (req, res) => {
                     checkOutTime: todayAttendance.checkOutTime,
                 } : null,
             },
-        });
-    } catch (error) {
-        console.error('Error getting attendance status:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error getting attendance status',
         });
     }
 });
