@@ -4,7 +4,11 @@ const { getGeofenceSettings } = require('../models/Settings');
 const Branch = require('../models/Branch');
 const LocationPing = require('../models/LocationPing');
 const Employee = require('../models/Employee');
+const Attendance = require('../models/Attendance');
 const { isWithinGeofence } = require('../utils/geofence');
+
+// Auto-checkout threshold: 5 consecutive pings outside geofence (5 minutes)
+const OUTSIDE_GEOFENCE_CHECKOUT_THRESHOLD = 5;
 
 /**
  * POST /ping - Receive location ping from mobile app
@@ -71,6 +75,46 @@ router.post('/ping', async (req, res) => {
             }
         }
 
+        // Track consecutive pings outside geofence for auto-checkout
+        let outsideGeofenceCount = employee.outsideGeofenceCount || 0;
+        let autoCheckedOut = false;
+        let shouldContinueTracking = true;
+
+        if (!isInsideAnyBranch) {
+            // Increment outside counter
+            outsideGeofenceCount += 1;
+            console.log(`[Location] ${employeeId} outside geofence. Count: ${outsideGeofenceCount}/${OUTSIDE_GEOFENCE_CHECKOUT_THRESHOLD}`);
+
+            // Check if threshold reached - trigger auto-checkout
+            if (outsideGeofenceCount >= OUTSIDE_GEOFENCE_CHECKOUT_THRESHOLD) {
+                console.log(`[Auto-Checkout] ${employeeId} has been outside geofence for ${outsideGeofenceCount} minutes. Triggering auto-checkout.`);
+
+                // Get open attendance session and close it
+                const openSession = await Attendance.getOpenSession(employeeId);
+                if (openSession) {
+                    await Attendance.checkOut(openSession.attendanceId);
+                    console.log(`[Auto-Checkout] Closed attendance session ${openSession.attendanceId}`);
+                }
+
+                // Stop tracking
+                await Employee.updateEmployee(employeeId, {
+                    isTracking: false,
+                    outsideGeofenceCount: 0,
+                    autoCheckedOutAt: new Date().toISOString(),
+                    autoCheckoutReason: 'outside_geofence',
+                    lastLatitude: userLat,
+                    lastLongitude: userLng,
+                    lastPingTime: new Date().toISOString(),
+                });
+
+                autoCheckedOut = true;
+                shouldContinueTracking = false;
+            }
+        } else {
+            // Reset counter when inside geofence
+            outsideGeofenceCount = 0;
+        }
+
         // Save the ping
         const ping = await LocationPing.savePing({
             employeeId,
@@ -81,13 +125,16 @@ router.post('/ping', async (req, res) => {
             distance: minDistance,
         });
 
-        // Update employee's tracking status
-        await Employee.updateEmployee(employeeId, {
-            lastLatitude: userLat,
-            lastLongitude: userLng,
-            lastPingTime: new Date().toISOString(),
-            isInsideGeofence: isInsideAnyBranch,
-        });
+        // Update employee's tracking status (if not auto-checked out)
+        if (shouldContinueTracking) {
+            await Employee.updateEmployee(employeeId, {
+                lastLatitude: userLat,
+                lastLongitude: userLng,
+                lastPingTime: new Date().toISOString(),
+                isInsideGeofence: isInsideAnyBranch,
+                outsideGeofenceCount: outsideGeofenceCount,
+            });
+        }
 
         // Get today's work summary
         const today = new Date().toISOString().split('T')[0];
@@ -103,6 +150,9 @@ router.post('/ping', async (req, res) => {
             },
             workMinutes: workSummary.workMinutes,
             formattedDuration: workSummary.formattedDuration,
+            autoCheckedOut: autoCheckedOut,
+            tracking: shouldContinueTracking,
+            outsideGeofenceCount: isInsideAnyBranch ? 0 : outsideGeofenceCount,
         });
     } catch (error) {
         console.error('Error saving location ping:', error);
@@ -112,6 +162,7 @@ router.post('/ping', async (req, res) => {
         });
     }
 });
+
 
 /**
  * GET /employees - Get all employees' latest locations for admin map

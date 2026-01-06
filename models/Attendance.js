@@ -1,6 +1,7 @@
 const { GetCommand, PutCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('../config/aws');
 const { v4: uuidv4 } = require('uuid');
+const { getAttendanceSettings } = require('./Settings');
 
 const TABLE_NAME = process.env.DYNAMODB_ATTENDANCE_TABLE || 'srm-attendance-table';
 
@@ -10,6 +11,7 @@ const TABLE_NAME = process.env.DYNAMODB_ATTENDANCE_TABLE || 'srm-attendance-tabl
 async function createAttendance(attendanceData) {
     const timestamp = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const status = await determineStatusAsync(new Date());
 
     const item = {
         attendanceId: uuidv4(),
@@ -20,7 +22,7 @@ async function createAttendance(attendanceData) {
         checkInLat: attendanceData.latitude,
         checkInLng: attendanceData.longitude,
         verificationMethod: 'face_recognition',
-        status: determineStatus(new Date()),
+        status: status,
         createdAt: timestamp,
     };
 
@@ -234,20 +236,48 @@ async function getAttendanceByDate(date) {
 }
 
 /**
- * Determine attendance status based on check-in time
+ * Determine attendance status based on check-in time (async version with configurable thresholds)
+ */
+async function determineStatusAsync(checkInTime) {
+    let lateThreshold = 555;  // Default 9:15 AM
+    let halfDayThreshold = 720;  // Default 12:00 PM
+
+    try {
+        const settings = await getAttendanceSettings();
+        lateThreshold = settings.lateThresholdMinutes || 555;
+        halfDayThreshold = settings.halfDayThresholdMinutes || 720;
+    } catch (err) {
+        console.log('[Attendance] Using default thresholds:', err.message);
+    }
+
+    const hours = checkInTime.getHours();
+    const minutes = checkInTime.getMinutes();
+    const timeInMinutes = hours * 60 + minutes;
+
+    if (timeInMinutes <= lateThreshold) {
+        return 'present';
+    } else if (timeInMinutes <= halfDayThreshold) {
+        return 'late';
+    } else {
+        return 'half-day';
+    }
+}
+
+/**
+ * Determine attendance status based on check-in time (sync fallback)
  */
 function determineStatus(checkInTime) {
     const hours = checkInTime.getHours();
     const minutes = checkInTime.getMinutes();
     const timeInMinutes = hours * 60 + minutes;
 
-    // Assuming office hours start at 9:00 AM (540 minutes)
-    // Late if after 9:15 AM (555 minutes)
-    // Half-day if after 12:00 PM (720 minutes)
+    // Default thresholds (used as fallback)
+    const lateThreshold = 555;  // 9:15 AM
+    const halfDayThreshold = 720;  // 12:00 PM
 
-    if (timeInMinutes <= 555) {
+    if (timeInMinutes <= lateThreshold) {
         return 'present';
-    } else if (timeInMinutes <= 720) {
+    } else if (timeInMinutes <= halfDayThreshold) {
         return 'late';
     } else {
         return 'half-day';
