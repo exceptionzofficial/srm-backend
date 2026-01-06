@@ -141,6 +141,8 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             lastLongitude: parseFloat(longitude),
             lastPingTime: new Date().toISOString(),
             trackingStartTime: new Date().toISOString(),
+            isInsideGeofence: true, // Employee is inside geofence (passed check)
+            outsideGeofenceCount: 0, // Reset counter on fresh check-in
         });
 
         res.json({

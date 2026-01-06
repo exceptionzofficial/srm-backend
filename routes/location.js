@@ -196,8 +196,26 @@ router.get('/employees', async (req, res) => {
         // Combine employee data with location data
         const employeeLocations = employees.map(emp => {
             const ping = pingMap[emp.employeeId];
-            const isOnline = ping &&
-                (new Date() - new Date(ping.timestamp)) < 5 * 60 * 1000; // 5 min threshold
+
+            // Determine online status:
+            // 1. If ping exists and is within 5 minutes, employee is online
+            // 2. OR if employee is actively tracking (just checked in)
+            const pingAge = ping ? (new Date() - new Date(ping.timestamp)) : Infinity;
+            const isOnline = (ping && pingAge < 5 * 60 * 1000) || emp.isTracking;
+
+            // Determine geofence status:
+            // 1. Use ping's isInsideGeofence if available
+            // 2. Fall back to employee's stored isInsideGeofence (set on check-in or ping)
+            // 3. If actively tracking and no ping yet, assume inside (just checked in)
+            let isInsideGeofence = false;
+            if (ping) {
+                isInsideGeofence = ping.isInsideGeofence || false;
+            } else if (emp.isTracking) {
+                // Employee just checked in but no ping yet - use stored value or assume inside
+                isInsideGeofence = emp.isInsideGeofence !== undefined ? emp.isInsideGeofence : true;
+            } else {
+                isInsideGeofence = emp.isInsideGeofence || false;
+            }
 
             return {
                 employeeId: emp.employeeId,
@@ -207,12 +225,17 @@ router.get('/employees', async (req, res) => {
                 branchName: branchMap[emp.branchId]?.name || 'Unassigned',
                 isTracking: emp.isTracking || false,
                 isOnline,
-                isInsideGeofence: ping?.isInsideGeofence || false,
+                isInsideGeofence,
                 lastLocation: ping ? {
                     latitude: ping.latitude,
                     longitude: ping.longitude,
                     timestamp: ping.timestamp,
                     distance: ping.distance,
+                } : (emp.lastLatitude && emp.lastLongitude) ? {
+                    latitude: emp.lastLatitude,
+                    longitude: emp.lastLongitude,
+                    timestamp: emp.lastPingTime,
+                    distance: 0,
                 } : null,
             };
         });
