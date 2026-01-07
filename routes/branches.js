@@ -81,7 +81,7 @@ router.get('/:branchId', async (req, res) => {
  */
 router.post('/', async (req, res) => {
     try {
-        const { name, address, latitude, longitude, radiusMeters, isActive } = req.body;
+        const { name, address, latitude, longitude, radiusMeters, isActive, branchType } = req.body;
 
         if (!name) {
             return res.status(400).json({
@@ -111,6 +111,7 @@ router.post('/', async (req, res) => {
             longitude: parseFloat(longitude),
             radiusMeters: parseInt(radiusMeters) || 100,
             isActive,
+            branchType,
         });
 
         res.status(201).json({
