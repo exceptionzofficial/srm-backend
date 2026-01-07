@@ -34,6 +34,7 @@ async function createEmployee(employeeData) {
         faceId: null,
         status: employeeData.status || 'active',
         workMode: employeeData.workMode || 'OFFICE', // Default to OFFICE
+        fixedSalary: employeeData.fixedSalary ? parseFloat(employeeData.fixedSalary) : 0, // Default to 0
         createdAt: timestamp,
         updatedAt: timestamp,
     };

@@ -29,6 +29,7 @@ app.use('/api/face', faceRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/location', locationRoutes);
+app.use('/api/requests', require('./routes/requests'));
 app.use('/api/branches', branchRoutes);
 app.use('/api/liveness', livenessRoutes);
 app.use('/api/salary', require('./routes/salary'));

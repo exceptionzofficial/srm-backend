@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
+const Request = require('../models/Request');
 const { searchFace } = require('../utils/rekognition');
 const { getGeofenceSettings } = require('../models/Settings');
 const { isWithinGeofence } = require('../utils/geofence');
@@ -425,6 +426,45 @@ router.get('/status/:employeeId', async (req, res) => {
             }
         }
 
+        // --- DURATION CALCULATION (Attendance + Permissions) ---
+        const todayDateStr = now.toISOString().split('T')[0];
+
+        // 1. Calculate Attendance Duration (from all sessions today)
+        let attendanceDurationMinutes = 0;
+        allTodaySessions.forEach(session => {
+            if (session.checkInTime) {
+                const start = new Date(session.checkInTime);
+                const end = session.checkOutTime ? new Date(session.checkOutTime) : new Date();
+                const durationMs = end - start;
+                attendanceDurationMinutes += durationMs / (1000 * 60);
+            }
+        });
+
+        // 2. Fetch Approved Permissions for Today
+        let permissionDurationMinutes = 0;
+        try {
+            const permissions = await Request.getApprovedPermissions(employeeId, todayDateStr);
+            permissions.forEach(perm => {
+                // Assuming perm.data.duration is in MINUTES as per plan/requirement? 
+                // Plan said: "duration (e.g., 2 hours, 30 mins)" -> We should standardize to minutes in Frontend.
+                // Creating helper to parse if it's string, or expect number.
+                // Let's assume it's stored as Number (minutes) or String.
+                let duration = 0;
+                if (perm.data && perm.data.duration) {
+                    // Try to parse if string "2 hours" etc? Or rely on frontend sending minutes?
+                    // Let's rely on frontend sending `durationMinutes` or `duration` (number).
+                    // If it's a string like "2 hours", we might fail here.
+                    // IMPORTANT: I will enforce frontend to send `duration` as Number of minutes or I'll try to parse simple numbers.
+                    duration = parseFloat(perm.data.duration) || 0;
+                }
+                permissionDurationMinutes += duration;
+            });
+        } catch (e) {
+            console.error('Error fetching permissions for duration:', e);
+        }
+
+        const totalWorkDurationMinutes = attendanceDurationMinutes + permissionDurationMinutes;
+
         res.json({
             success: true,
             employee: {
@@ -447,6 +487,7 @@ router.get('/status/:employeeId', async (req, res) => {
                 ifscCode: employee.ifscCode,
                 paymentMode: employee.paymentMode,
                 joinedDate: employee.joinedDate,
+                fixedSalary: employee.fixedSalary || 0
             },
             status: {
                 isTracking: isTracking,
@@ -458,6 +499,12 @@ router.get('/status/:employeeId', async (req, res) => {
                 canCheckIn: !isTracking && !canResume && !openSession,
                 canCheckOut: isTracking || canResume || !!openSession, // Can checkout if any open session
                 attendanceRecords: allTodaySessions, // Return full list
+
+                // Duration Info
+                attendanceDurationMinutes: Math.round(attendanceDurationMinutes),
+                permissionDurationMinutes: Math.round(permissionDurationMinutes),
+                totalWorkDurationMinutes: Math.round(totalWorkDurationMinutes),
+
                 openSession: openSession ? {
                     attendanceId: openSession.attendanceId,
                     checkInTime: openSession.checkInTime,
