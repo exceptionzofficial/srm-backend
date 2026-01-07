@@ -119,17 +119,29 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             const openSession = await Attendance.getOpenSession(employeeId);
 
             if (openSession) {
-                // Real open session exists
-                return res.status(400).json({
-                    success: false,
-                    message: 'Already checked in. Please check out first.',
-                });
+                // Check if the open session is from TODAY or STALE (previous day)
+                const today = new Date().toISOString().split('T')[0];
+                const sessionDate = openSession.date; // YYYY-MM-DD
+
+                if (sessionDate === today) {
+                    // Real open session exists TODAY
+                    return res.status(400).json({
+                        success: false,
+                        message: `Already checked in today at ${new Date(openSession.checkInTime).toLocaleTimeString()}. Please check out first.`,
+                    });
+                } else {
+                    // STALE SESSION (e.g. forgot to checkout yesterday)
+                    console.log(`[Check-in] Stale session detected from ${sessionDate}. Auto-closing session ${openSession.attendanceId}.`);
+
+                    // Auto-close the stale session
+                    await Attendance.checkOut(openSession.attendanceId);
+
+                    // Proceed with new check-in (isTracking will be updated next)
+                }
             } else {
                 // Ghost session detected (isTracking=true but no open session)
                 console.log(`[Check-in] Ghost tracking detected for ${employee.name} (${employeeId}). Auto-correcting status.`);
                 // We will proceed with check-in, which updates isTracking=true anyway.
-                // But let's log it clearly.
-                // No need to return error. Flow continues to create new session.
             }
         }
 
