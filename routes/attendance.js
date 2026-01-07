@@ -111,11 +111,26 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
         // Check if currently tracking (already checked in but not checked out)
         // Employee fetched above for permission check
 
+        // Check if currently tracking (already checked in but not checked out)
+        // Employee fetched above for permission check
+
         if (employee.isTracking) {
-            return res.status(400).json({
-                success: false,
-                message: 'Already checked in. Please check out first.',
-            });
+            // Verify if there is ACTUALLY an open session (ghost tracking check)
+            const openSession = await Attendance.getOpenSession(employeeId);
+
+            if (openSession) {
+                // Real open session exists
+                return res.status(400).json({
+                    success: false,
+                    message: 'Already checked in. Please check out first.',
+                });
+            } else {
+                // Ghost session detected (isTracking=true but no open session)
+                console.log(`[Check-in] Ghost tracking detected for ${employee.name} (${employeeId}). Auto-correcting status.`);
+                // We will proceed with check-in, which updates isTracking=true anyway.
+                // But let's log it clearly.
+                // No need to return error. Flow continues to create new session.
+            }
         }
 
         // Validate Branch
