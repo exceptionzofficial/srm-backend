@@ -56,6 +56,10 @@ router.post('/register', upload.single('image'), async (req, res) => {
 
         // Check geo-fence
         const geofence = await getGeofenceSettings();
+        console.log('--- Geofence Debug (Register) ---');
+        console.log('User Location:', { latitude, longitude });
+        console.log('Geofence Settings:', geofence);
+
         if (geofence.isConfigured) {
             const locationCheck = isWithinGeofence(
                 parseFloat(latitude),
@@ -65,15 +69,21 @@ router.post('/register', upload.single('image'), async (req, res) => {
                 geofence.radiusMeters
             );
 
+            console.log('Check Result:', locationCheck);
+
             if (!locationCheck.isWithin) {
+                console.log('❌ Geofence Failed');
                 return res.status(403).json({
                     success: false,
-                    message: `You are too far from the office! Distance: ${locationCheck.distance}m (Allowed: ${locationCheck.allowedRadius}m)`,
+                    message: `Unable to register: You are too far from the office! Distance: ${locationCheck.distance}m (Allowed: ${locationCheck.allowedRadius}m)`,
                     distance: locationCheck.distance,
                     allowedRadius: locationCheck.allowedRadius,
                     withinRange: false,
                 });
             }
+            console.log('✅ Geofence Passed');
+        } else {
+            console.log('⚠️ Geofence NOT Configured - Skipping check');
         }
 
         // Get image buffer

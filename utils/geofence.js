@@ -23,7 +23,9 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
         Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-    return R * c; // Distance in meters
+    const dist = R * c;
+    // console.log(`Distance Calc: (${lat1}, ${lng1}) -> (${lat2}, ${lng2}) = ${dist}m`);
+    return dist; // Distance in meters
 }
 
 /**
