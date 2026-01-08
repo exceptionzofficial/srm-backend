@@ -4,6 +4,7 @@ const multer = require('multer');
 const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
 const Request = require('../models/Request');
+const Branch = require('../models/Branch');
 const { searchFace } = require('../utils/rekognition');
 const { getGeofenceSettings } = require('../models/Settings');
 const { isWithinGeofence } = require('../utils/geofence');
@@ -83,22 +84,68 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             }
             // If authorized, we SKIP geofence check
         } else {
+        } else {
             // OFFICE MODE - Enforce Geofence
-            const geofence = await getGeofenceSettings();
-            if (geofence.isConfigured) {
+
+            // Determine Target Location (Branch vs Global)
+            let targetLat, targetLng, targetRadius;
+            let isConfigured = false;
+            let checkSource = 'GLOBAL';
+
+            // 1. Check Request Body Branch (User selected in App)
+            const requestBranchId = req.body.branchId;
+            if (requestBranchId) {
+                const branch = await Branch.getBranchById(requestBranchId);
+                if (branch && branch.latitude && branch.longitude) {
+                    targetLat = branch.latitude;
+                    targetLng = branch.longitude;
+                    targetRadius = branch.radiusMeters || 100;
+                    isConfigured = true;
+                    checkSource = `BRANCH: ${branch.name}`;
+                }
+            }
+
+            // 2. Fallback to Employee's Assigned Branch
+            if (!isConfigured && employee.branchId) {
+                const branch = await Branch.getBranchById(employee.branchId);
+                if (branch && branch.latitude && branch.longitude) {
+                    targetLat = branch.latitude;
+                    targetLng = branch.longitude;
+                    targetRadius = branch.radiusMeters || 100;
+                    isConfigured = true;
+                    checkSource = `ASSIGNED_BRANCH: ${branch.name}`;
+                }
+            }
+
+            // 3. Fallback to Global Settings
+            if (!isConfigured) {
+                const globalSettings = await getGeofenceSettings();
+                if (globalSettings.isConfigured) {
+                    targetLat = globalSettings.officeLat;
+                    targetLng = globalSettings.officeLng;
+                    targetRadius = globalSettings.radiusMeters;
+                    isConfigured = true;
+                    checkSource = 'GLOBAL_OFFICE';
+                }
+            }
+
+            console.log(`[Check-in] Validating Location against: ${checkSource}`);
+
+            if (isConfigured) {
                 const locationCheck = isWithinGeofence(
                     parseFloat(latitude),
                     parseFloat(longitude),
-                    geofence.officeLat,
-                    geofence.officeLng,
-                    geofence.radiusMeters
+                    targetLat,
+                    targetLng,
+                    targetRadius
                 );
 
                 if (!locationCheck.isWithin) {
                     return res.status(403).json({
                         success: false,
-                        message: `You are too far from the office! Distance: ${locationCheck.distance}m`,
+                        message: `You are too far from the office! Distance: ${locationCheck.distance}m (Allowed: ${locationCheck.allowedRadius}m)`,
                         withinRange: false,
+                        distance: locationCheck.distance
                     });
                 }
             }
