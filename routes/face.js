@@ -254,4 +254,48 @@ router.post('/verify', upload.single('image'), async (req, res) => {
     }
 });
 
+/**
+ * Delete face registration (Reset face)
+ * DELETE /api/face/:employeeId
+ */
+router.delete('/:employeeId', async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+
+        const employee = await Employee.getEmployeeById(employeeId);
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+
+        if (!employee.faceId) {
+            return res.status(400).json({ success: false, message: 'No face registered for this employee' });
+        }
+
+        // Delete from Rekognition
+        try {
+            const { deleteFace } = require('../utils/rekognition');
+            await deleteFace(employee.faceId);
+            console.log(`[Face Delete] Removed face ${employee.faceId} from Rekognition`);
+        } catch (rekError) {
+            console.warn(`[Face Delete] Warning: Failed to delete from Rekognition (might already be gone):`, rekError.message);
+            // Continue to clear DB even if Rekognition fails
+        }
+
+        // Clear from Database
+        await Employee.updateEmployeeFaceId(employeeId, null);
+
+        res.json({
+            success: true,
+            message: 'Face registration reset successfully. Employee can now register again.',
+        });
+
+    } catch (error) {
+        console.error('Error deleting face:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error deleting face registration',
+        });
+    }
+});
+
 module.exports = router;
