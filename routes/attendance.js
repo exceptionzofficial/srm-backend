@@ -84,7 +84,6 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             }
             // If authorized, we SKIP geofence check
         } else {
-        } else {
             // OFFICE MODE - Enforce Geofence
 
             // Determine Target Location (Branch vs Global)
@@ -92,21 +91,8 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             let isConfigured = false;
             let checkSource = 'GLOBAL';
 
-            // 1. Check Request Body Branch (User selected in App)
-            const requestBranchId = req.body.branchId;
-            if (requestBranchId) {
-                const branch = await Branch.getBranchById(requestBranchId);
-                if (branch && branch.latitude && branch.longitude) {
-                    targetLat = branch.latitude;
-                    targetLng = branch.longitude;
-                    targetRadius = branch.radiusMeters || 100;
-                    isConfigured = true;
-                    checkSource = `BRANCH: ${branch.name}`;
-                }
-            }
-
-            // 2. Fallback to Employee's Assigned Branch
-            if (!isConfigured && employee.branchId) {
+            // 1. Check Employee's Assigned Branch (TOP PRIORITY)
+            if (employee.branchId) {
                 const branch = await Branch.getBranchById(employee.branchId);
                 if (branch && branch.latitude && branch.longitude) {
                     targetLat = branch.latitude;
@@ -114,6 +100,21 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
                     targetRadius = branch.radiusMeters || 100;
                     isConfigured = true;
                     checkSource = `ASSIGNED_BRANCH: ${branch.name}`;
+                }
+            }
+
+            // 2. Fallback to Request Body Branch (User selected in App)
+            if (!isConfigured) {
+                const requestBranchId = req.body.branchId;
+                if (requestBranchId) {
+                    const branch = await Branch.getBranchById(requestBranchId);
+                    if (branch && branch.latitude && branch.longitude) {
+                        targetLat = branch.latitude;
+                        targetLng = branch.longitude;
+                        targetRadius = branch.radiusMeters || 100;
+                        isConfigured = true;
+                        checkSource = `Selected_BRANCH: ${branch.name}`;
+                    }
                 }
             }
 
