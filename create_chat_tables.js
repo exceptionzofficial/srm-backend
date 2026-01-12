@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { CreateTableCommand } = require('@aws-sdk/client-dynamodb');
 const { dynamoClient } = require('./config/aws');
 
