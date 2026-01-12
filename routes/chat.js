@@ -101,4 +101,33 @@ router.get('/groups/:groupId/messages', async (req, res) => {
     }
 });
 
+/**
+ * Mark messages as read
+ */
+router.post('/groups/:groupId/read', async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required'
+            });
+        }
+
+        await Chat.markAsRead(groupId, userId);
+        res.json({
+            success: true,
+            message: 'Messages marked as read'
+        });
+    } catch (error) {
+        console.error('Error marking as read:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error marking messages as read'
+        });
+    }
+});
+
 module.exports = router;
