@@ -1,16 +1,15 @@
-const { GetCommand, PutCommand, ScanCommand, UpdateCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
-const { docClient } = require('../config/aws');
+const { db, admin } = require('../config/firebase');
 const { v4: uuidv4 } = require('uuid');
 
-const GROUPS_TABLE = process.env.DYNAMODB_CHAT_GROUPS_TABLE || 'srm-chat-groups';
-const MESSAGES_TABLE = process.env.DYNAMODB_CHAT_MESSAGES_TABLE || 'srm-chat-messages';
+const COLLECTION_GROUPS = 'chat_groups';
+const COLLECTION_MESSAGES = 'chat_messages';
 
 /**
  * Create a new chat group
  */
 async function createGroup(groupData) {
-    const timestamp = new Date().toISOString();
     const groupId = groupData.id || uuidv4();
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
 
     // Ensure admin is in members
     const members = groupData.members || [];
@@ -18,7 +17,9 @@ async function createGroup(groupData) {
         members.push('hr-admin-1');
     }
 
-    const item = {
+    const groupRef = db.collection(COLLECTION_GROUPS).doc(groupId);
+
+    const groupItem = {
         id: groupId,
         name: groupData.name,
         members: members,
@@ -30,55 +31,50 @@ async function createGroup(groupData) {
         lastMessageSender: null
     };
 
-    const command = new PutCommand({
-        TableName: GROUPS_TABLE,
-        Item: item,
-    });
+    await groupRef.set(groupItem);
 
-    await docClient.send(command);
-    return item;
+    // Return with ID (timestamp won't be resolved yet in return, but that's ok)
+    return { ...groupItem, createdAt: new Date() };
 }
 
 /**
  * Get groups for a specific user
  */
 async function getUserGroups(userId) {
-    // START: Inefficient Scan (Improve with GSI later)
-    // Scanning all groups and filtering by member inclusion
-    const command = new ScanCommand({
-        TableName: GROUPS_TABLE,
-    });
+    try {
+        const snapshot = await db.collection(COLLECTION_GROUPS)
+            .where('members', 'array-contains', userId)
+            .orderBy('updatedAt', 'desc')
+            .get();
 
-    const response = await docClient.send(command);
-    const allGroups = response.Items || [];
-
-    // Filter groups where userId is in members
-    return allGroups.filter(group => Array.isArray(group.members) && group.members.includes(userId));
+        const groups = [];
+        snapshot.forEach(doc => {
+            groups.push(doc.data());
+        });
+        return groups;
+    } catch (error) {
+        console.error('Error fetching user groups:', error);
+        throw error;
+    }
 }
 
 /**
  * Get a single group by ID
  */
 async function getGroupById(groupId) {
-    const command = new GetCommand({
-        TableName: GROUPS_TABLE,
-        Key: { id: groupId },
-    });
-
-    const response = await docClient.send(command);
-    return response.Item;
+    const doc = await db.collection(COLLECTION_GROUPS).doc(groupId).get();
+    return doc.exists ? doc.data() : null;
 }
 
 /**
  * Delete a group
  */
 async function deleteGroup(groupId) {
-    const command = new DeleteCommand({
-        TableName: GROUPS_TABLE,
-        Key: { id: groupId },
-    });
+    await db.collection(COLLECTION_GROUPS).doc(groupId).delete();
 
-    await docClient.send(command);
+    // Optional: Delete messages for this group?
+    // Firestore doesn't cascade delete automatically. 
+    // For now, we leave messages orphaned or handle via background function.
     return { success: true };
 }
 
@@ -86,8 +82,8 @@ async function deleteGroup(groupId) {
  * Send a message
  */
 async function sendMessage(groupId, messageData) {
-    const timestamp = new Date().toISOString(); // DynamoDB stores as string usually
     const messageId = uuidv4();
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
 
     const messageItem = {
         id: messageId,
@@ -95,62 +91,51 @@ async function sendMessage(groupId, messageData) {
         senderId: messageData.senderId,
         senderName: messageData.senderName,
         content: messageData.content,
-        timestamp: timestamp,
-        // Some frontends expect _seconds (Firebase style), but we'll stick to ISO for Dynamo and convert on retrieval if needed
-        // Or we can store epoch seconds if that's what the frontend expects.
-        // The frontend code showed `timestamp._seconds`.
-        // We'll store standard ISO string for now, but return object with _seconds if needed.
+        timestamp: timestamp
     };
 
-    const command = new PutCommand({
-        TableName: MESSAGES_TABLE,
-        Item: messageItem,
+    const batch = db.batch();
+
+    // 1. Add message
+    const messageRef = db.collection(COLLECTION_MESSAGES).doc(messageId);
+    batch.set(messageRef, messageItem);
+
+    // 2. Update group last message
+    const groupRef = db.collection(COLLECTION_GROUPS).doc(groupId);
+    batch.update(groupRef, {
+        lastMessage: messageData.content,
+        lastMessageTime: timestamp,
+        lastMessageSender: messageData.senderName,
+        updatedAt: timestamp
     });
 
-    await docClient.send(command);
+    await batch.commit();
 
-    // Update group's last message
-    const updateGroupCommand = new UpdateCommand({
-        TableName: GROUPS_TABLE,
-        Key: { id: groupId },
-        UpdateExpression: 'SET lastMessage = :msg, lastMessageTime = :time, lastMessageSender = :sender',
-        ExpressionAttributeValues: {
-            ':msg': messageData.content,
-            ':time': timestamp,
-            ':sender': messageData.senderName
-        }
-    });
-
-    await docClient.send(updateGroupCommand);
-
-    return messageItem;
+    return { ...messageItem, timestamp: new Date() };
 }
 
 /**
  * Get messages for a group
  */
 async function getMessages(groupId) {
-    // Assuming GSI on groupId for messages table
-    // If no GSI, we have to Scan (bad practice but works for small data)
-    // Let's assume Scan with Filter for now to be safe without schema knowledge
+    try {
+        const snapshot = await db.collection(COLLECTION_MESSAGES)
+            .where('groupId', '==', groupId)
+            .orderBy('timestamp', 'asc')
+            .get();
 
-    // BETTER: Query if Partition Key is groupId (or if using GSI)
-    // If MESSAGES_TABLE has PK as id, we can't Query by groupId easily without GSI.
-    // We will use Scan with Filter for simplicity in this "fix".
-
-    const command = new ScanCommand({
-        TableName: MESSAGES_TABLE,
-        FilterExpression: 'groupId = :gid',
-        ExpressionAttributeValues: {
-            ':gid': groupId
-        }
-    });
-
-    const response = await docClient.send(command);
-    const items = response.Items || [];
-
-    // Sort by timestamp
-    return items.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const messages = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            // Convert Firestore Timestamp to JS Date/Object if needed, 
+            // but usually we pass it as is and frontend handles ._seconds
+            messages.push(data);
+        });
+        return messages;
+    } catch (error) {
+        console.error('Error getting messages:', error);
+        throw error;
+    }
 }
 
 module.exports = {
