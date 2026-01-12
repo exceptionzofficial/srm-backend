@@ -68,10 +68,7 @@ exports.getUserGroups = async (req, res) => {
     }
 };
 
-console.error('Error fetching groups:', error);
-res.status(500).json({ success: false, message: error.message });
-    }
-};
+
 
 // Send a message
 exports.sendMessage = async (req, res) => {
