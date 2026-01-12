@@ -28,7 +28,8 @@ async function createGroup(groupData) {
         updatedAt: timestamp,
         lastMessage: null,
         lastMessageTime: null,
-        lastMessageSender: null
+        lastMessageSender: null,
+        unreadCounts: {} // Map of userId -> count
     };
 
     await groupRef.set(groupItem);
@@ -100,14 +101,31 @@ async function sendMessage(groupId, messageData) {
     const messageRef = db.collection(COLLECTION_MESSAGES).doc(messageId);
     batch.set(messageRef, messageItem);
 
-    // 2. Update group last message
+    // 2. Prepare group update
     const groupRef = db.collection(COLLECTION_GROUPS).doc(groupId);
-    batch.update(groupRef, {
+
+    // We need to know members to update their unread counts
+    const groupDoc = await groupRef.get();
+    let updates = {
         lastMessage: messageData.content,
         lastMessageTime: timestamp,
         lastMessageSender: messageData.senderName,
         updatedAt: timestamp
-    });
+    };
+
+    if (groupDoc.exists) {
+        const groupData = groupDoc.data();
+        const members = groupData.members || [];
+
+        members.forEach(memberId => {
+            if (memberId !== messageData.senderId) {
+                // Dot notation for updating nested map fields
+                updates[`unreadCounts.${memberId}`] = admin.firestore.FieldValue.increment(1);
+            }
+        });
+    }
+
+    batch.update(groupRef, updates);
 
     await batch.commit();
 
@@ -138,11 +156,29 @@ async function getMessages(groupId) {
     }
 }
 
+/**
+ * Mark messages as read for a user
+ */
+async function markAsRead(groupId, userId) {
+    try {
+        const groupRef = db.collection(COLLECTION_GROUPS).doc(groupId);
+        // Reset unread count for this user to 0
+        await groupRef.update({
+            [`unreadCounts.${userId}`]: 0
+        });
+        return { success: true };
+    } catch (error) {
+        console.error('Error marking as read:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     createGroup,
     getUserGroups,
     getGroupById,
     deleteGroup,
     sendMessage,
-    getMessages
+    getMessages,
+    markAsRead
 };

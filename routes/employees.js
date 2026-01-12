@@ -142,7 +142,7 @@ router.get('/:employeeId', async (req, res) => {
 // Create new employee (admin only) - with photo upload
 router.post('/', upload.single('photo'), async (req, res) => {
     try {
-        const { employeeId, name, email, phone, department, designation, branchId, workMode, panNumber, aadharNumber } = req.body;
+        const { employeeId, name, email, phone, department, designation, branchId, workMode, panNumber, aadharNumber, joinedDate, bankAccount, ifscCode, uan, fixedSalary } = req.body;
 
         if (!employeeId || !name) {
             return res.status(400).json({
@@ -188,6 +188,11 @@ router.post('/', upload.single('photo'), async (req, res) => {
             workMode,
             panNumber: panNumber || null,
             aadharNumber: aadharNumber || null,
+            joinedDate: joinedDate || null,
+            bankAccount: bankAccount || null,
+            ifscCode: ifscCode || null,
+            uan: uan || null,
+            fixedSalary: fixedSalary || 0,
             photoUrl,
         });
 
