@@ -35,8 +35,6 @@ app.use('/api/liveness', livenessRoutes);
 app.use('/api/salary', require('./routes/salary'));
 app.use('/api/chat', require('./routes/chat'));
 
-
-
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'SRM Sweets API is running' });
