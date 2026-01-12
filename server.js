@@ -33,6 +33,9 @@ app.use('/api/requests', require('./routes/requests'));
 app.use('/api/branches', branchRoutes);
 app.use('/api/liveness', livenessRoutes);
 app.use('/api/salary', require('./routes/salary'));
+app.use('/api/chat', require('./routes/chat'));
+
+
 
 // Health check
 app.get('/api/health', (req, res) => {
