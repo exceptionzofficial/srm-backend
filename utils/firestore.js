@@ -9,18 +9,25 @@ try {
     const keyPath = path.join(__dirname, '../gcp-service-account.json');
     if (fs.existsSync(keyPath)) {
         serviceAccount = require(keyPath);
-    } else if (process.env.GCP_SERVICE_ACCOUNT) {
-        // Support Vercel Environment Variable
-        try {
-            serviceAccount = JSON.parse(process.env.GCP_SERVICE_ACCOUNT);
-            console.log('Using GCP_SERVICE_ACCOUNT from environment');
-        } catch (e) {
-            console.error('Failed to parse GCP_SERVICE_ACCOUNT env var', e);
-        }
+        console.log('✅ Loaded gcp-service-account.json from file');
     } else {
-        // Fallback or explicit check for other known keys if needed
-        // For now, we expect gcp-service-account.json or we'll warn
-        console.warn('⚠️  gcp-service-account.json not found in root. Firestore may not connect.');
+        console.log('ℹ️ gcp-service-account.json not found, checking environment...');
+        if (process.env.GCP_SERVICE_ACCOUNT) {
+            // Support Vercel Environment Variable
+            console.log('✅ Found GCP_SERVICE_ACCOUNT in environment. Length:', process.env.GCP_SERVICE_ACCOUNT.length);
+            try {
+                serviceAccount = JSON.parse(process.env.GCP_SERVICE_ACCOUNT);
+                console.log('✅ Successfully parsed GCP_SERVICE_ACCOUNT');
+            } catch (e) {
+                console.error('❌ Failed to parse GCP_SERVICE_ACCOUNT env var:', e.message);
+            }
+        } else {
+            console.warn('⚠️ GCP_SERVICE_ACCOUNT environment variable is NOT set.');
+        }
+    }
+
+    if (!serviceAccount) {
+        console.warn('⚠️ Critical: No service account credentials found. Firestore will fail.');
     }
 } catch (error) {
     console.error('Error loading service account:', error);
