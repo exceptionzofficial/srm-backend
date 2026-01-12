@@ -18,8 +18,9 @@ exports.createGroup = async (req, res) => {
             members: allMembers,
             createdBy,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            // Initial state
             lastMessage: null,
-            lastMessageTime: null
+            lastMessageTime: admin.firestore.FieldValue.serverTimestamp() // Sync with createdAt so it shows up in queries
         };
 
         const groupRef = await db.collection('chat_groups').add(groupData);
@@ -38,10 +39,12 @@ exports.createGroup = async (req, res) => {
 exports.getUserGroups = async (req, res) => {
     try {
         const { userId } = req.params;
+        console.log(`[Chat] Fetching groups for user: ${userId}`);
 
+        // Note: We removed .orderBy('lastMessageTime') because it excludes docs where field is null
+        // and requires a composite index. For now, we sort in memory.
         const snapshot = await db.collection('chat_groups')
             .where('members', 'array-contains', userId)
-            .orderBy('lastMessageTime', 'desc')
             .get();
 
         const groups = [];
@@ -49,24 +52,24 @@ exports.getUserGroups = async (req, res) => {
             groups.push({ id: doc.id, ...doc.data() });
         });
 
+        console.log(`[Chat] Found ${groups.length} groups.`);
+
+        // Sort manually in memory (Newest activity first)
+        groups.sort((a, b) => {
+            const timeA = a.lastMessageTime?._seconds || a.createdAt?._seconds || 0;
+            const timeB = b.lastMessageTime?._seconds || b.createdAt?._seconds || 0;
+            return timeB - timeA;
+        });
+
         res.json({ success: true, data: groups });
     } catch (error) {
-        // If index is missing for orderBy, fallback to no order or handle error
-        if (error.code === 9) { // FAILED_PRECONDITION (Index missing)
-            const snapshot = await db.collection('chat_groups')
-                .where('members', 'array-contains', userId)
-                .get();
-            const groups = [];
-            snapshot.forEach(doc => {
-                groups.push({ id: doc.id, ...doc.data() });
-            });
-            // Sort manually
-            groups.sort((a, b) => (b.lastMessageTime?._seconds || 0) - (a.lastMessageTime?._seconds || 0));
-            return res.json({ success: true, data: groups });
-        }
-
         console.error('Error fetching groups:', error);
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+console.error('Error fetching groups:', error);
+res.status(500).json({ success: false, message: error.message });
     }
 };
 
