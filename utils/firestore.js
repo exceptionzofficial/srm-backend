@@ -9,6 +9,14 @@ try {
     const keyPath = path.join(__dirname, '../gcp-service-account.json');
     if (fs.existsSync(keyPath)) {
         serviceAccount = require(keyPath);
+    } else if (process.env.GCP_SERVICE_ACCOUNT) {
+        // Support Vercel Environment Variable
+        try {
+            serviceAccount = JSON.parse(process.env.GCP_SERVICE_ACCOUNT);
+            console.log('Using GCP_SERVICE_ACCOUNT from environment');
+        } catch (e) {
+            console.error('Failed to parse GCP_SERVICE_ACCOUNT env var', e);
+        }
     } else {
         // Fallback or explicit check for other known keys if needed
         // For now, we expect gcp-service-account.json or we'll warn
