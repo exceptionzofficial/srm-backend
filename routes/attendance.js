@@ -429,8 +429,8 @@ router.get('/report', async (req, res) => {
                         date: d,
                         status: statusResult.status,
                         remarks: statusResult.remarks,
-                        in: statusResult.times.in,
-                        out: statusResult.times.out
+                        in: statusResult.times?.in || '-',
+                        out: statusResult.times?.out || '-'
                     });
                 }
 
