@@ -795,6 +795,12 @@ router.get('/report', async (req, res) => {
             success: true,
             date,
             total: report.length,
+            debug: {
+                employeeCountBeforeFilter: employees.length,
+                branchIdParam: branchId,
+                requestsFound: allRequests.length,
+                attendanceRecordsFound: attendanceRecords.length
+            },
             report
         });
 
