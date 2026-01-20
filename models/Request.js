@@ -145,10 +145,39 @@ async function getApprovedPermissions(employeeId, date) {
     return items.filter(item => item.data && item.data.date === date);
 }
 
+/**
+ * Get all approved requests (LEAVE or PERMISSION) for a specific date across ALL employees
+ * Optimized for daily report generation
+ */
+async function getApprovedRequestsByDate(date) {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: '#status = :status',
+        ExpressionAttributeNames: {
+            '#status': 'status'
+        },
+        ExpressionAttributeValues: {
+            ':status': 'APPROVED'
+        }
+    });
+
+    const response = await docClient.send(command);
+    const items = response.Items || [];
+
+    // Filter by date match in data.date
+    // Also include requests that span a date range if applicable (future enhancement)
+    // For now, assuming single date in data.date
+    return items.filter(item => {
+        if (!item.data || !item.data.date) return false;
+        return item.data.date === date;
+    });
+}
+
 module.exports = {
     createRequest,
     getRequestsByEmployee,
     getAllRequests,
     updateRequestStatus,
-    getApprovedPermissions
+    getApprovedPermissions,
+    getApprovedRequestsByDate
 };
