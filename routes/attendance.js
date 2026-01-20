@@ -328,6 +328,101 @@ router.post('/check-out', upload.single('image'), async (req, res) => {
 });
 
 /**
+ * Get Detailed Daily Attendance Report
+ * GET /api/attendance/report?date=YYYY-MM-DD[&branchId=...]
+ */
+router.get('/report', async (req, res) => {
+    try {
+        const { date, branchId } = req.query;
+        if (!date) {
+            return res.status(400).json({ success: false, message: 'Date is required' });
+        }
+
+        // 1. Fetch All Employees (Optional: Filter by Branch)
+        let employees = await Employee.getAllEmployees();
+        if (branchId) {
+            employees = employees.filter(e => e.branchId === branchId);
+        }
+
+        // 2. Fetch Global Settings
+        const settings = await getAttendanceSettings();
+
+        // 3. Fetch Attendance Records for Date
+        const attendanceRecords = await Attendance.getAttendanceByDate(date);
+
+        // 4. Fetch Approved Requests (Leave/Permissions) for Date
+        const allRequests = await Request.getApprovedRequestsByDate(date);
+
+        // 5. Calculate Status for Each Employee
+        const report = await Promise.all(employees.map(async (employee) => {
+            // Find attendance for this employee
+            const empAttendance = attendanceRecords.filter(r => r.employeeId === employee.employeeId);
+
+            // Construct a "Day Summary" attendance object if multiple exist
+            let effectiveAttendance = null;
+            if (empAttendance.length > 0) {
+                // Sort by checkInTime
+                empAttendance.sort((a, b) => new Date(a.checkInTime) - new Date(b.checkInTime));
+
+                // First Check-In
+                const firstCheckIn = empAttendance[0].checkInTime;
+
+                // Last Check-Out
+                let lastCheckOut = null;
+                const lastRecord = empAttendance[empAttendance.length - 1];
+                if (lastRecord.checkOutTime) {
+                    lastCheckOut = lastRecord.checkOutTime;
+                }
+
+                effectiveAttendance = {
+                    checkInTime: firstCheckIn,
+                    checkOutTime: lastCheckOut
+                };
+            }
+
+            // Find Approved Request
+            const empRequests = allRequests.filter(r => r.employeeId === employee.employeeId);
+            const leaveRequest = empRequests.find(r => r.type === 'LEAVE');
+            const permissionRequest = empRequests.find(r => r.type === 'PERMISSION');
+
+            const statusResult = calculateDailyStatus({
+                employee,
+                attendance: effectiveAttendance,
+                leave: leaveRequest,
+                permission: permissionRequest,
+                settings,
+                date
+            });
+
+            return {
+                employeeId: employee.employeeId,
+                name: employee.name,
+                department: employee.department,
+                designation: employee.designation,
+                ...statusResult
+            };
+        }));
+
+        res.json({
+            success: true,
+            date,
+            total: report.length,
+            debug: {
+                employeeCountBeforeFilter: employees.length,
+                branchIdParam: branchId,
+                requestsFound: allRequests.length,
+                attendanceRecordsFound: attendanceRecords.length
+            },
+            report
+        });
+
+    } catch (error) {
+        console.error('Error generating attendance report:', error);
+        res.status(500).json({ success: false, message: 'Error generating report' });
+    }
+});
+
+/**
  * Get attendance history for employee
  * GET /api/attendance/:employeeId
  */
@@ -705,109 +800,6 @@ router.post('/close-all-sessions/:employeeId', async (req, res) => {
     }
 });
 
-/**
- * Get Detailed Daily Attendance Report
- * GET /api/attendance/report?date=YYYY-MM-DD[&branchId=...]
- */
-router.get('/report', async (req, res) => {
-    try {
-        const { date, branchId } = req.query;
-        if (!date) {
-            return res.status(400).json({ success: false, message: 'Date is required' });
-        }
 
-        // 1. Fetch All Employees (Optional: Filter by Branch)
-        let employees = await Employee.getAllEmployees();
-        if (branchId) {
-            employees = employees.filter(e => e.branchId === branchId);
-        }
-
-        // 2. Fetch Global Settings
-        const settings = await getAttendanceSettings();
-
-        // 3. Fetch Attendance Records for Date
-        const attendanceRecords = await Attendance.getAttendanceByDate(date);
-
-        // 4. Fetch Approved Requests (Leave/Permissions) for Date
-        const allRequests = await Request.getApprovedRequestsByDate(date);
-
-        // 5. Calculate Status for Each Employee
-        const report = await Promise.all(employees.map(async (employee) => {
-            // Find attendance for this employee
-            // In case of multiple sessions, we look for the EARLIEST check-in and LATEST check-out
-            // Or just pass the 'primary' session?
-            // The calculator takes `attendance` object with checkInTime/checkOutTime.
-            // If multiple sessions exist, we should merge them effectively or pick the main one.
-            // Simplified: Pick the session that covers the work hours best, or just the first one?
-            // Let's grab all sessions for this employee
-            const empAttendance = attendanceRecords.filter(r => r.employeeId === employee.employeeId);
-
-            // Construct a "Day Summary" attendance object if multiple exist
-            let effectiveAttendance = null;
-            if (empAttendance.length > 0) {
-                // Sort by checkInTime
-                empAttendance.sort((a, b) => new Date(a.checkInTime) - new Date(b.checkInTime));
-
-                // First Check-In
-                const firstCheckIn = empAttendance[0].checkInTime;
-
-                // Last Check-Out
-                // Find the last record. If it has checkout, use it. If not, it's open.
-                // If ANY record is open, the day is technically 'Working' or 'Shift out punch not done'
-
-                // Let's create a synthetic object representing the day's span
-                let lastCheckOut = null;
-                const lastRecord = empAttendance[empAttendance.length - 1];
-                if (lastRecord.checkOutTime) {
-                    lastCheckOut = lastRecord.checkOutTime;
-                }
-
-                effectiveAttendance = {
-                    checkInTime: firstCheckIn,
-                    checkOutTime: lastCheckOut
-                };
-            }
-
-            // Find Approved Request
-            const empRequests = allRequests.filter(r => r.employeeId === employee.employeeId);
-            const leaveRequest = empRequests.find(r => r.type === 'LEAVE');
-            const permissionRequest = empRequests.find(r => r.type === 'PERMISSION');
-
-            const statusResult = calculateDailyStatus({
-                employee,
-                attendance: effectiveAttendance,
-                leave: leaveRequest,
-                permission: permissionRequest,
-                settings,
-                date
-            });
-
-            return {
-                employeeId: employee.employeeId,
-                name: employee.name,
-                department: employee.department,
-                designation: employee.designation,
-                ...statusResult
-            };
-        }));
-
-        res.json({
-            success: true,
-            date,
-            total: report.length,
-            debug: {
-                employeeCountBeforeFilter: employees.length,
-                branchIdParam: branchId,
-                requestsFound: allRequests.length,
-                attendanceRecordsFound: attendanceRecords.length
-            },
-            report
-        });
-
-    } catch (error) {
-        console.error('Error generating attendance report:', error);
-        res.status(500).json({ success: false, message: 'Error generating report' });
-    }
-});
 
 module.exports = router;
