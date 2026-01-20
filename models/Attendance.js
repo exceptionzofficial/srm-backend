@@ -236,6 +236,28 @@ async function getAttendanceByDate(date) {
 }
 
 /**
+ * Get all attendance records for a date range (Inclusive)
+ */
+async function getAttendanceByDateRange(startDate, endDate) {
+    // Scan and filter by date range
+    // Note: In a large system, this should use a GSI on date or Query if date is part of Key
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: '#date BETWEEN :start AND :end',
+        ExpressionAttributeNames: {
+            '#date': 'date',
+        },
+        ExpressionAttributeValues: {
+            ':start': startDate,
+            ':end': endDate,
+        },
+    });
+
+    const response = await docClient.send(command);
+    return response.Items || [];
+}
+
+/**
  * Determine attendance status based on check-in time (async version with configurable thresholds)
  */
 async function determineStatusAsync(checkInTime) {
@@ -326,5 +348,6 @@ module.exports = {
     checkOut,
     getAttendanceHistory,
     getAttendanceByDate,
+    getAttendanceByDateRange,
     updateAttendance,
 };

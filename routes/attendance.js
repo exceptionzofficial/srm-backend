@@ -333,9 +333,13 @@ router.post('/check-out', upload.single('image'), async (req, res) => {
  */
 router.get('/report', async (req, res) => {
     try {
-        const { date, branchId } = req.query;
-        if (!date) {
-            return res.status(400).json({ success: false, message: 'Date is required' });
+        const { date, startDate, endDate, branchId } = req.query;
+
+        // Determine mode: Range vs Single Date
+        const isRange = startDate && endDate;
+
+        if (!isRange && !date) {
+            return res.status(400).json({ success: false, message: 'Date or Date Range (startDate, endDate) is required' });
         }
 
         // 1. Fetch All Employees (Optional: Filter by Branch)
@@ -347,74 +351,161 @@ router.get('/report', async (req, res) => {
         // 2. Fetch Global Settings
         const settings = await getAttendanceSettings();
 
-        // 3. Fetch Attendance Records for Date
-        const attendanceRecords = await Attendance.getAttendanceByDate(date);
+        // --- RANGE MODE ---
+        if (isRange) {
+            // Fetch Data for Range
+            const attendanceRecords = await Attendance.getAttendanceByDateRange(startDate, endDate);
+            const allRequests = await Request.getApprovedRequestsByDateRange(startDate, endDate);
 
-        // 4. Fetch Approved Requests (Leave/Permissions) for Date
-        const allRequests = await Request.getApprovedRequestsByDate(date);
-
-        // 5. Calculate Status for Each Employee
-        const report = await Promise.all(employees.map(async (employee) => {
-            // Find attendance for this employee
-            const empAttendance = attendanceRecords.filter(r => r.employeeId === employee.employeeId);
-
-            // Construct a "Day Summary" attendance object if multiple exist
-            let effectiveAttendance = null;
-            if (empAttendance.length > 0) {
-                // Sort by checkInTime
-                empAttendance.sort((a, b) => new Date(a.checkInTime) - new Date(b.checkInTime));
-
-                // First Check-In
-                const firstCheckIn = empAttendance[0].checkInTime;
-
-                // Last Check-Out
-                let lastCheckOut = null;
-                const lastRecord = empAttendance[empAttendance.length - 1];
-                if (lastRecord.checkOutTime) {
-                    lastCheckOut = lastRecord.checkOutTime;
-                }
-
-                effectiveAttendance = {
-                    checkInTime: firstCheckIn,
-                    checkOutTime: lastCheckOut
-                };
+            // Generate Date Array
+            const dateArray = [];
+            let currentDate = new Date(startDate);
+            const end = new Date(endDate);
+            while (currentDate <= end) {
+                dateArray.push(currentDate.toISOString().split('T')[0]);
+                currentDate.setDate(currentDate.getDate() + 1);
             }
 
-            // Find Approved Request
-            const empRequests = allRequests.filter(r => r.employeeId === employee.employeeId);
-            const leaveRequest = empRequests.find(r => r.type === 'LEAVE');
-            const permissionRequest = empRequests.find(r => r.type === 'PERMISSION');
+            // Aggregate Stats per Employee
+            const report = await Promise.all(employees.map(async (employee) => {
+                const stats = {
+                    present: 0,
+                    absent: 0,
+                    lateIn: 0,
+                    earlyOut: 0,
+                    halfDay: 0,
+                    weekOff: 0,
+                    leave: 0,
+                    permission: 0,
+                    totalDays: dateArray.length
+                };
 
-            const statusResult = calculateDailyStatus({
-                employee,
-                attendance: effectiveAttendance,
-                leave: leaveRequest,
-                permission: permissionRequest,
-                settings,
-                date
+                const dailyBreakdown = []; // Optional: For detailed CSV if needed later
+
+                // Iterate through each day
+                for (const d of dateArray) {
+                    // Filter for this day
+                    const empAttendance = attendanceRecords.filter(r => r.employeeId === employee.employeeId && r.date === d);
+
+                    // Day Summary Construction (reuse logic)
+                    let effectiveAttendance = null;
+                    if (empAttendance.length > 0) {
+                        empAttendance.sort((a, b) => new Date(a.checkInTime) - new Date(b.checkInTime));
+                        const lastRecord = empAttendance[empAttendance.length - 1];
+                        effectiveAttendance = {
+                            checkInTime: empAttendance[0].checkInTime,
+                            checkOutTime: lastRecord.checkOutTime || null
+                        };
+                    }
+
+                    const empRequests = allRequests.filter(r => r.employeeId === employee.employeeId && r.data && r.data.date === d);
+                    const leaveRequest = empRequests.find(r => r.type === 'LEAVE');
+                    const permissionRequest = empRequests.find(r => r.type === 'PERMISSION');
+
+                    const statusResult = calculateDailyStatus({
+                        employee,
+                        attendance: effectiveAttendance,
+                        leave: leaveRequest,
+                        permission: permissionRequest,
+                        settings,
+                        date: d
+                    });
+
+                    // Aggregate
+                    // Note: 'Present' is usually added even if 'Late In'.
+                    // We need to count specific tags.
+                    const s = statusResult.status;
+                    if (s.includes('Present') || s.includes('Present (On Leave)')) stats.present++;
+                    if (s.includes('Absent') && !s.includes('Week off')) stats.absent++; // Absent usually excludes WeekOff/Leave if marked differently
+                    if (s.includes('Late in')) stats.lateIn++;
+                    if (s.includes('Early out')) stats.earlyOut++;
+                    if (s.includes('Half day in') || s.includes('Half day out')) stats.halfDay++;
+                    if (s.includes('Leave')) stats.leave++;
+                    if (s.includes('Permission in')) stats.permission++;
+                    if (s.includes('Week off')) stats.weekOff++;
+
+                    // Store daily breakdown mainly for CSV
+                    dailyBreakdown.push({
+                        date: d,
+                        status: statusResult.status,
+                        remarks: statusResult.remarks,
+                        in: statusResult.times.in,
+                        out: statusResult.times.out
+                    });
+                }
+
+                return {
+                    employeeId: employee.employeeId,
+                    name: employee.name,
+                    department: employee.department,
+                    designation: employee.designation,
+                    stats,
+                    dailyBreakdown
+                };
+            }));
+
+            res.json({
+                success: true,
+                startDate,
+                endDate,
+                total: report.length,
+                type: 'range',
+                report
             });
 
-            return {
-                employeeId: employee.employeeId,
-                name: employee.name,
-                department: employee.department,
-                designation: employee.designation,
-                ...statusResult
-            };
-        }));
+        } else {
+            // --- SINGLE DATE MODE (Existing Logic) ---
+            const attendanceRecords = await Attendance.getAttendanceByDate(date);
+            const allRequests = await Request.getApprovedRequestsByDate(date);
 
-        res.json({
-            success: true,
-            date,
-            total: report.length,
-            debug: {
-                employeeCountBeforeFilter: employees.length,
-                branchIdParam: branchId,
-                requestsFound: allRequests.length,
-                attendanceRecordsFound: attendanceRecords.length
-            },
-            report
-        });
+            const report = await Promise.all(employees.map(async (employee) => {
+                const empAttendance = attendanceRecords.filter(r => r.employeeId === employee.employeeId);
+                let effectiveAttendance = null;
+                if (empAttendance.length > 0) {
+                    empAttendance.sort((a, b) => new Date(a.checkInTime) - new Date(b.checkInTime));
+                    const lastRecord = empAttendance[empAttendance.length - 1];
+                    effectiveAttendance = {
+                        checkInTime: empAttendance[0].checkInTime,
+                        checkOutTime: lastRecord.checkOutTime || null
+                    };
+                }
+
+                const empRequests = allRequests.filter(r => r.employeeId === employee.employeeId);
+                const leaveRequest = empRequests.find(r => r.type === 'LEAVE');
+                const permissionRequest = empRequests.find(r => r.type === 'PERMISSION');
+
+                const statusResult = calculateDailyStatus({
+                    employee,
+                    attendance: effectiveAttendance,
+                    leave: leaveRequest,
+                    permission: permissionRequest,
+                    settings,
+                    date
+                });
+
+                return {
+                    employeeId: employee.employeeId,
+                    name: employee.name,
+                    department: employee.department,
+                    designation: employee.designation,
+                    ...statusResult
+                };
+            }));
+
+            res.json({
+                success: true,
+                date,
+                total: report.length,
+                type: 'daily',
+                debug: {
+                    employeeCountBeforeFilter: employees.length,
+                    branchIdParam: branchId,
+                    requestsFound: allRequests.length,
+                    attendanceRecordsFound: attendanceRecords.length
+                },
+                report
+            });
+        }
 
     } catch (error) {
         console.error('Error generating attendance report:', error);

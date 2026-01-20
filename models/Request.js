@@ -173,11 +173,36 @@ async function getApprovedRequestsByDate(date) {
     });
 }
 
+/**
+ * Get approved requests for a date range
+ */
+async function getApprovedRequestsByDateRange(startDate, endDate) {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: '#status = :status',
+        ExpressionAttributeNames: {
+            '#status': 'status'
+        },
+        ExpressionAttributeValues: {
+            ':status': 'APPROVED'
+        }
+    });
+
+    const response = await docClient.send(command);
+    const items = response.Items || [];
+
+    return items.filter(item => {
+        if (!item.data || !item.data.date) return false;
+        return item.data.date >= startDate && item.data.date <= endDate;
+    });
+}
+
 module.exports = {
     createRequest,
     getRequestsByEmployee,
     getAllRequests,
     updateRequestStatus,
     getApprovedPermissions,
-    getApprovedRequestsByDate
+    getApprovedRequestsByDate,
+    getApprovedRequestsByDateRange
 };
