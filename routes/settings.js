@@ -104,5 +104,50 @@ router.put('/attendance', async (req, res) => {
     }
 });
 
+// Get employee rules
+router.get('/rules', async (req, res) => {
+    try {
+        const rules = await Settings.getEmployeeRules();
+        res.json({
+            success: true,
+            rules,
+        });
+    } catch (error) {
+        console.error('Error fetching employee rules:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching employee rules',
+        });
+    }
+});
+
+// Update employee rules (admin only)
+router.put('/rules', async (req, res) => {
+    try {
+        const { rules, updatedBy } = req.body;
+
+        if (!rules) {
+            return res.status(400).json({
+                success: false,
+                message: 'Rules text is required',
+            });
+        }
+
+        const updatedRules = await Settings.updateEmployeeRules(rules, updatedBy);
+
+        res.json({
+            success: true,
+            message: 'Employee rules updated successfully',
+            rules: updatedRules,
+        });
+    } catch (error) {
+        console.error('Error updating employee rules:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error updating employee rules',
+        });
+    }
+});
+
 module.exports = router;
 

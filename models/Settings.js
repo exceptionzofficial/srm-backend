@@ -114,5 +114,51 @@ module.exports = {
     updateGeofenceSettings,
     getAttendanceSettings,
     updateAttendanceSettings,
+    getEmployeeRules,
+    updateEmployeeRules,
 };
+
+const RULES_SETTING_ID = 'employee-rules-config';
+
+/**
+ * Get employee rules
+ */
+async function getEmployeeRules() {
+    const command = new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { settingId: RULES_SETTING_ID },
+    });
+
+    const response = await docClient.send(command);
+
+    if (!response.Item) {
+        return {
+            settingId: RULES_SETTING_ID,
+            rules: "1. Office timing is 9:00 AM to 6:00 PM.\n2. Please wear formal attire.\n3. Mark attendance daily.",
+            updatedAt: new Date().toISOString(),
+        };
+    }
+    return response.Item;
+}
+
+/**
+ * Update employee rules
+ */
+async function updateEmployeeRules(rulesText, updatedBy) {
+    const timestamp = new Date().toISOString();
+    const item = {
+        settingId: RULES_SETTING_ID,
+        rules: rulesText,
+        updatedBy: updatedBy || 'admin',
+        updatedAt: timestamp,
+    };
+
+    const command = new PutCommand({
+        TableName: TABLE_NAME,
+        Item: item,
+    });
+
+    await docClient.send(command);
+    return item;
+}
 
