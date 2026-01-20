@@ -168,8 +168,8 @@ function calculateDailyStatus({ employee, attendance, leave, permission, setting
         remarks: remarks.join(', ') || (statuses.includes('Present') ? 'On Time' : ''),
         color,
         times: {
-            in: new Date(attendance.checkInTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            out: attendance.checkOutTime ? new Date(attendance.checkOutTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'
+            in: new Date(attendance.checkInTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }),
+            out: attendance.checkOutTime ? new Date(attendance.checkOutTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '-'
         }
     };
 }
