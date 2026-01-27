@@ -27,9 +27,9 @@ async function sendOTPEmail({ email, otp, employeeName = 'Employee' }) {
                 <head>
                     <style>
                         body {
-                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                            font-family: 'Poppins', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                             line-height: 1.6;
-                            color: #333;
+                            color: #000000;
                             margin: 0;
                             padding: 0;
                         }
@@ -42,8 +42,9 @@ async function sendOTPEmail({ email, otp, employeeName = 'Employee' }) {
                         .content {
                             background-color: white;
                             padding: 40px 30px;
-                            border-radius: 12px;
-                            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                            border-radius: 0;
+                            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                            border: 1px solid #E0E0E0;
                         }
                         .logo {
                             text-align: center;
@@ -56,23 +57,24 @@ async function sendOTPEmail({ email, otp, employeeName = 'Employee' }) {
                         .header {
                             text-align: center;
                             margin-bottom: 30px;
-                            border-bottom: 3px solid #2563eb;
+                            border-bottom: 3px solid #EF4136;
                             padding-bottom: 20px;
                         }
                         .header h1 {
-                            color: #1e40af;
+                            color: #EF4136;
                             margin: 0 0 10px 0;
                             font-size: 24px;
+                            font-weight: 600;
                         }
                         .header p {
-                            color: #64748b;
+                            color: #666666;
                             margin: 0;
                             font-size: 14px;
                         }
                         .otp-box {
-                            background: linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%);
-                            border: 2px dashed #2563eb;
-                            border-radius: 10px;
+                            background: rgba(239, 65, 54, 0.05);
+                            border: 2px solid #EF4136;
+                            border-radius: 0;
                             padding: 25px;
                             text-align: center;
                             margin: 30px 0;
@@ -80,7 +82,7 @@ async function sendOTPEmail({ email, otp, employeeName = 'Employee' }) {
                         .otp-code {
                             font-size: 36px;
                             font-weight: bold;
-                            color: #1e40af;
+                            color: #EF4136;
                             letter-spacing: 10px;
                             margin: 15px 0;
                             font-family: 'Courier New', monospace;
@@ -90,7 +92,7 @@ async function sendOTPEmail({ email, otp, employeeName = 'Employee' }) {
                             border-left: 4px solid #f59e0b;
                             padding: 15px 20px;
                             margin: 25px 0;
-                            border-radius: 6px;
+                            border-radius: 0;
                         }
                         .warning strong {
                             color: #d97706;
@@ -99,16 +101,20 @@ async function sendOTPEmail({ email, otp, employeeName = 'Employee' }) {
                             text-align: center;
                             margin-top: 30px;
                             padding-top: 20px;
-                            border-top: 1px solid #e5e7eb;
-                            color: #6b7280;
+                            border-top: 1px solid #E0E0E0;
+                            color: #666666;
                             font-size: 13px;
                         }
                         ul {
                             margin: 10px 0;
                             padding-left: 20px;
+                            color: #333333;
                         }
                         li {
                             margin: 5px 0;
+                        }
+                        p {
+                            color: #333333;
                         }
                     </style>
                 </head>
