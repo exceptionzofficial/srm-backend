@@ -47,11 +47,11 @@ async function sendOTPEmail({ email, otp, employeeName = 'Employee' }) {
                             border: 1px solid #E0E0E0;
                         }
                         .logo {
-                            text-align: center;
-                            margin-bottom: 20px;
+                            text-align: left;
+                            margin-bottom: 15px;
                         }
                         .logo img {
-                            max-width: 200px;
+                            max-width: 80px;
                             height: auto;
                         }
                         .header {
