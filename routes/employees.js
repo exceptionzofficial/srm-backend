@@ -160,6 +160,21 @@ router.post('/', upload.single('photo'), async (req, res) => {
             });
         }
 
+        // Verify email OTP before creating employee
+        if (email) {
+            const { isEmailVerified, clearVerification } = require('../utils/otpService');
+
+            if (!isEmailVerified(email)) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Email not verified. Please verify the email with OTP before creating employee.',
+                    requiresVerification: true,
+                });
+            }
+
+            // Email is verified, we'll clear it after successful creation
+        }
+
         let photoUrl = null;
 
         // Upload photo to S3 if provided
@@ -195,6 +210,12 @@ router.post('/', upload.single('photo'), async (req, res) => {
             fixedSalary: fixedSalary || 0,
             photoUrl,
         });
+
+        // Clear email verification after successful creation
+        if (email) {
+            const { clearVerification } = require('../utils/otpService');
+            clearVerification(email);
+        }
 
         res.status(201).json({
             success: true,
