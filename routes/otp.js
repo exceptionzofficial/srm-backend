@@ -34,8 +34,18 @@ router.post('/send', async (req, res) => {
         const otp = generateOTP();
         const expiryMinutes = parseInt(process.env.OTP_EXPIRY_MINUTES || '10');
 
-        // Store OTP
-        storeOTP(email, otp, expiryMinutes);
+        // Store OTP (with rate limiting check)
+        const storeResult = storeOTP(email, otp, expiryMinutes);
+
+        // Check if rate limited
+        if (!storeResult.success) {
+            return res.status(429).json({
+                success: false,
+                message: storeResult.message,
+                rateLimited: true,
+                retryAfter: storeResult.retryAfter
+            });
+        }
 
         // Send email
         try {
@@ -49,6 +59,8 @@ router.post('/send', async (req, res) => {
                 success: true,
                 message: `OTP sent successfully to ${email}`,
                 expiresIn: `${expiryMinutes} minutes`,
+                sendCount: storeResult.sendCount,
+                remainingSends: storeResult.remainingSends
             });
         } catch (emailError) {
             console.error('Error sending OTP email:', emailError);
@@ -177,8 +189,18 @@ router.post('/send-sms', async (req, res) => {
         const otp = generateOTP();
         const expiryMinutes = parseInt(process.env.OTP_EXPIRY_MINUTES || '10');
 
-        // Store OTP using phone number as identifier
-        storeOTP(phone, otp, expiryMinutes);
+        // Store OTP using phone number as identifier (with rate limiting check)
+        const storeResult = storeOTP(phone, otp, expiryMinutes);
+
+        // Check if rate limited
+        if (!storeResult.success) {
+            return res.status(429).json({
+                success: false,
+                message: storeResult.message,
+                rateLimited: true,
+                retryAfter: storeResult.retryAfter
+            });
+        }
 
         // Send SMS
         try {
@@ -192,6 +214,8 @@ router.post('/send-sms', async (req, res) => {
                 success: true,
                 message: `OTP sent successfully to ${phone}`,
                 expiresIn: `${expiryMinutes} minutes`,
+                sendCount: storeResult.sendCount,
+                remainingSends: storeResult.remainingSends
             });
         } catch (smsError) {
             console.error('Error sending OTP SMS:', smsError);

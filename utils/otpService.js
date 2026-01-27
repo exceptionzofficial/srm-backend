@@ -23,20 +23,60 @@ function generateOTP() {
 }
 
 /**
- * Store OTP for an email
- * @param {string} email - Email address
+ * Store OTP for an email/phone with rate limiting
+ * @param {string} identifier - Email or phone number
  * @param {string} otp - Generated OTP
  * @param {number} expiryMinutes - OTP expiry time in minutes
+ * @returns {Object} Status object with success/error
  */
-function storeOTP(email, otp, expiryMinutes = 10) {
-    const expiresAt = Date.now() + expiryMinutes * 60 * 1000;
-    otpStore.set(email.toLowerCase(), {
+function storeOTP(identifier, otp, expiryMinutes = 10) {
+    const normalizedId = identifier.toLowerCase();
+    const now = Date.now();
+    const existingData = otpStore.get(normalizedId);
+
+    // Check if rate limited (max 2 sends per hour)
+    if (existingData && existingData.sendAttempts) {
+        const hourAgo = now - 60 * 60 * 1000; // 1 hour ago
+
+        // Filter send attempts within last hour
+        const recentSends = existingData.sendAttempts.filter(time => time > hourAgo);
+
+        // If already sent 2 times in last hour, block
+        if (recentSends.length >= 2) {
+            const oldestSend = Math.min(...recentSends);
+            const cooldownEndsAt = oldestSend + 60 * 60 * 1000; // 1 hour from oldest send
+            const remainingMinutes = Math.ceil((cooldownEndsAt - now) / (60 * 1000));
+
+            return {
+                success: false,
+                rateLimited: true,
+                message: `Too many OTP requests. Please try again after ${remainingMinutes} minute(s).`,
+                retryAfter: cooldownEndsAt
+            };
+        }
+    }
+
+    const expiresAt = now + expiryMinutes * 60 * 1000;
+
+    // Store OTP with send attempt tracking
+    otpStore.set(normalizedId, {
         otp,
         expiresAt,
         attempts: 0,
         verified: false,
+        sendAttempts: existingData?.sendAttempts
+            ? [...existingData.sendAttempts.filter(time => time > now - 60 * 60 * 1000), now]
+            : [now]
     });
-    console.log(`Stored OTP for ${email}, expires at: ${new Date(expiresAt).toISOString()}`);
+
+    const sendCount = otpStore.get(normalizedId).sendAttempts.length;
+    console.log(`Stored OTP for ${identifier} (send ${sendCount}/2), expires at: ${new Date(expiresAt).toISOString()}`);
+
+    return {
+        success: true,
+        sendCount,
+        remainingSends: 2 - sendCount
+    };
 }
 
 /**
