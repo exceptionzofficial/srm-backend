@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { generateOTP, storeOTP, verifyOTP, isEmailVerified, getOTPInfo } = require('../utils/otpService');
 const { sendOTPEmail } = require('../utils/emailService');
-const { sendOTPDirect } = require('../utils/smsService');
+const { sendOTPSMS } = require('../utils/smsService');
 
 // Email validation regex
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -182,7 +182,7 @@ router.post('/send-sms', async (req, res) => {
 
         // Send SMS
         try {
-            await sendOTPDirect({
+            await sendOTPSMS({
                 phone,
                 otp,
                 employeeName: employeeName || 'Employee',
