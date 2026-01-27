@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { generateOTP, storeOTP, verifyOTP, isEmailVerified, getOTPInfo } = require('../utils/otpService');
 const { sendOTPEmail } = require('../utils/emailService');
+const { sendOTPDirect } = require('../utils/smsService');
 
 // Email validation regex
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -143,6 +144,109 @@ router.get('/status/:email', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error checking OTP status',
+        });
+    }
+});
+
+/**
+ * POST /api/otp/send-sms
+ * Send OTP to phone number via SMS
+ */
+router.post('/send-sms', async (req, res) => {
+    try {
+        const { phone, employeeName } = req.body;
+
+        // Validate phone
+        if (!phone) {
+            return res.status(400).json({
+                success: false,
+                message: 'Phone number is required',
+            });
+        }
+
+        // Basic phone validation (at least 10 digits)
+        const cleanPhone = phone.replace(/[^0-9]/g, '');
+        if (cleanPhone.length < 10) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid phone number format',
+            });
+        }
+
+        // Generate OTP
+        const otp = generateOTP();
+        const expiryMinutes = parseInt(process.env.OTP_EXPIRY_MINUTES || '10');
+
+        // Store OTP using phone number as identifier
+        storeOTP(phone, otp, expiryMinutes);
+
+        // Send SMS
+        try {
+            await sendOTPDirect({
+                phone,
+                otp,
+                employeeName: employeeName || 'Employee',
+            });
+
+            res.json({
+                success: true,
+                message: `OTP sent successfully to ${phone}`,
+                expiresIn: `${expiryMinutes} minutes`,
+            });
+        } catch (smsError) {
+            console.error('Error sending OTP SMS:', smsError);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to send OTP SMS. Please check the phone number and try again.',
+                error: process.env.NODE_ENV === 'development' ? smsError.message : undefined,
+            });
+        }
+    } catch (error) {
+        console.error('Error in send SMS OTP:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error sending SMS OTP',
+        });
+    }
+});
+
+/**
+ * POST /api/otp/verify-sms
+ * Verify OTP for phone number
+ */
+router.post('/verify-sms', async (req, res) => {
+    try {
+        const { phone, otp } = req.body;
+
+        // Validate input
+        if (!phone || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Phone number and OTP are required',
+            });
+        }
+
+        // Verify OTP
+        const result = verifyOTP(phone, otp.toString());
+
+        if (result.success) {
+            res.json({
+                success: true,
+                message: result.message,
+                verified: true,
+            });
+        } else {
+            res.status(400).json({
+                success: false,
+                message: result.message,
+                verified: false,
+            });
+        }
+    } catch (error) {
+        console.error('Error in verify SMS OTP:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error verifying SMS OTP',
         });
     }
 });
