@@ -19,8 +19,8 @@ async function storeOTP(otpData) {
             otp: otpData.otp,
             expiresAt: otpData.expiresAt,
             sendAttempts: otpData.sendAttempts || [],
-            attempts: 0,
-            verified: false,
+            attempts: otpData.attempts !== undefined ? otpData.attempts : 0,
+            verified: otpData.verified !== undefined ? otpData.verified : false,
             // TTL for DynamoDB to auto-delete after 24 hours (or whenever)
             // But we handle logic manually for now.
             createdAt: Date.now()
