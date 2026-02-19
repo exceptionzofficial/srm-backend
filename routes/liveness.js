@@ -43,9 +43,10 @@ let visionClient;
 
 try {
     // Check if running on Vercel with env var credentials
-    if (process.env.GCP_CREDENTIALS) {
+    const gcpCreds = process.env.GCP_CREDENTIALS || process.env.GCP_SERVICE_ACCOUNT;
+    if (gcpCreds) {
         // Parse credentials from environment variable
-        const credentials = JSON.parse(process.env.GCP_CREDENTIALS);
+        const credentials = JSON.parse(gcpCreds);
         gcsClient = new Storage({
             projectId: GCP_PROJECT_ID,
             credentials: credentials
