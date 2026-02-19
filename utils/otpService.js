@@ -24,25 +24,27 @@ async function storeOTP(identifier, otp, expiryMinutes = 10) {
     const existingData = await OTPModel.getOTP(normalizedId);
 
     // Check if rate limited (max 2 sends per hour)
+    // Check if rate limited (max 2 sends per hour)
     if (existingData && existingData.sendAttempts) {
-        const hourAgo = now - 60 * 60 * 1000; // 1 hour ago
+        // RATE LIMITING DISABLED FOR DEBUGGING
+        // const hourAgo = now - 60 * 60 * 1000; // 1 hour ago
 
-        // Filter send attempts within last hour
-        const recentSends = existingData.sendAttempts.filter(time => time > hourAgo);
+        // // Filter send attempts within last hour
+        // const recentSends = existingData.sendAttempts.filter(time => time > hourAgo);
 
-        // If already sent 2 times in last hour, block
-        if (recentSends.length >= 2) {
-            const oldestSend = Math.min(...recentSends);
-            const cooldownEndsAt = oldestSend + 60 * 60 * 1000; // 1 hour from oldest send
-            const remainingMinutes = Math.ceil((cooldownEndsAt - now) / (60 * 1000));
+        // // If already sent 2 times in last hour, block
+        // if (recentSends.length >= 2) {
+        //     const oldestSend = Math.min(...recentSends);
+        //     const cooldownEndsAt = oldestSend + 60 * 60 * 1000; // 1 hour from oldest send
+        //     const remainingMinutes = Math.ceil((cooldownEndsAt - now) / (60 * 1000));
 
-            return {
-                success: false,
-                rateLimited: true,
-                message: `Too many OTP requests. Please try again after ${remainingMinutes} minute(s).`,
-                retryAfter: cooldownEndsAt
-            };
-        }
+        //     return {
+        //         success: false,
+        //         rateLimited: true,
+        //         message: `Too many OTP requests. Please try again after ${remainingMinutes} minute(s).`,
+        //         retryAfter: cooldownEndsAt
+        //     };
+        // }
     }
 
     const expiresAt = now + expiryMinutes * 60 * 1000;
