@@ -131,6 +131,16 @@ router.post('/register', upload.single('image'), async (req, res) => {
             });
         }
 
+        // CLEANUP: Remove ANY existing faces for this employee (even if DB is out of sync)
+        // This ensures the new face is the ONLY face for this ID.
+        const { deleteFacesByEmployeeId } = require('../utils/rekognition');
+        try {
+            await deleteFacesByEmployeeId(employeeId);
+        } catch (cleanupError) {
+            console.warn(`[Face Register] Warning: Cleanup failed for ${employeeId}:`, cleanupError.message);
+            // We continue, as it might be a new user or connection glitch
+        }
+
         // Index face with Rekognition
         const faceResult = await indexFace(imageBuffer, employeeId);
 
