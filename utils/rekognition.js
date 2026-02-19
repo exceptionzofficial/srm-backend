@@ -184,6 +184,24 @@ async function deleteFacesByEmployeeId(employeeId) {
     }
 }
 
+/**
+ * Delete a face from collection
+ * @param {string} faceId - Face ID to delete
+ */
+async function deleteFace(faceId) {
+    try {
+        const command = new DeleteFacesCommand({
+            CollectionId: COLLECTION_ID,
+            FaceIds: [faceId],
+        });
+        await rekognitionClient.send(command);
+        return { success: true };
+    } catch (error) {
+        console.error('Error deleting face:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     indexFace,
     searchFace,
