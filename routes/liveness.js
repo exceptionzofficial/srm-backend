@@ -767,4 +767,61 @@ router.post('/gcp-analyze', async (req, res) => {
     }
 });
 
+/**
+ * Upload Base64 images to GCS (Backend Proxy)
+ * POST /api/liveness/upload-base64
+ * 
+ * alternative to direct upload if client network blocks it
+ */
+router.post('/upload-base64', async (req, res) => {
+    try {
+        const { photos, sessionId } = req.body;
+
+        if (!photos || !Array.isArray(photos) || photos.length === 0) {
+            return res.status(400).json({ success: false, message: 'No photos provided' });
+        }
+
+        const validSessionId = sessionId || `liveness-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const gcsKeys = [];
+        const bucket = gcsClient.bucket(GCS_BUCKET_NAME);
+
+        console.log(`[Liveness Proxy] Uploading ${photos.length} photos for session ${validSessionId}`);
+
+        for (let i = 0; i < photos.length; i++) {
+            // strip prefix if present
+            const base64Data = photos[i].replace(/^data:image\/\w+;base64,/, '');
+            const buffer = Buffer.from(base64Data, 'base64');
+            const filename = `liveness/${validSessionId}/photo-${i + 1}.jpg`;
+
+            const file = bucket.file(filename);
+            await file.save(buffer, {
+                contentType: 'image/jpeg',
+                metadata: {
+                    cacheControl: 'public, max-age=31536000',
+                },
+            });
+
+            gcsKeys.push(filename);
+        }
+
+        console.log(`[Liveness Proxy] Uploaded ${gcsKeys.length} photos to GCS`);
+
+        res.json({
+            success: true,
+            sessionId: validSessionId,
+            gcsKeys: gcsKeys,
+            bucket: GCS_BUCKET_NAME,
+            message: 'Photos uploaded successfully via proxy'
+        });
+
+    } catch (error) {
+        console.error('[Liveness Proxy] Upload error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            message: 'Failed to upload photos via proxy'
+        });
+    }
+});
+
 module.exports = router;
