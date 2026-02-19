@@ -128,8 +128,10 @@ router.post('/status', async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
-        const employee = await Employee.getEmployeeByEmail(email);
-        const manager = await Manager.getManagerByEmail(email);
+        const cleanEmail = email.trim().toLowerCase();
+
+        const employee = await Employee.getEmployeeByEmail(cleanEmail);
+        const manager = await Manager.getManagerByEmail(cleanEmail);
         const user = employee || manager;
 
         if (!user) {
@@ -158,8 +160,10 @@ router.post('/password/forgot', async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
-        const employee = await Employee.getEmployeeByEmail(email);
-        const manager = await Manager.getManagerByEmail(email);
+        const cleanEmail = email.trim().toLowerCase();
+
+        const employee = await Employee.getEmployeeByEmail(cleanEmail);
+        const manager = await Manager.getManagerByEmail(cleanEmail);
         const user = employee || manager;
 
         if (!user) {
@@ -197,8 +201,10 @@ router.post('/password/forgot', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-        const employee = await Employee.getEmployeeByEmail(email);
-        const manager = await Manager.getManagerByEmail(email);
+        const cleanEmail = email ? email.trim().toLowerCase() : '';
+
+        const employee = await Employee.getEmployeeByEmail(cleanEmail);
+        const manager = await Manager.getManagerByEmail(cleanEmail);
 
         const user = employee || manager;
 
