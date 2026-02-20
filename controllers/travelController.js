@@ -81,7 +81,12 @@ async function getActiveSession(req, res) {
         res.json({ success: true, session });
     } catch (error) {
         console.error('Error fetching active session:', error);
-        res.status(500).json({ success: false, message: 'Error fetching active session' });
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching active session',
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 }
 
