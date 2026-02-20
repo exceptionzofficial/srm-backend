@@ -13,7 +13,7 @@ async function createRequest(req, res) {
         }
 
         // Validate Request Type
-        const allowedTypes = ['ADVANCE', 'LEAVE', 'PERMISSION'];
+        const allowedTypes = ['ADVANCE', 'LEAVE', 'PERMISSION', 'BRANCH_TRAVEL'];
         if (!allowedTypes.includes(type)) {
             return res.status(400).json({ success: false, message: 'Invalid request type' });
         }
@@ -106,7 +106,17 @@ async function getRequestsByEmployee(req, res) {
 async function getAllRequests(req, res) {
     try {
         const { status, branchId } = req.query;
-        let requests = await Request.getAllRequests(status);
+        let requests;
+
+        // "PENDING" in UI should cover all pending stages
+        if (status === 'PENDING') {
+            // Fetch all (status=null) and filter in memory since we need multiple statuses
+            // Optimization: Update Request.getAllRequests to support array/IN clause
+            const allRequests = await Request.getAllRequests(null);
+            requests = allRequests.filter(r => ['PENDING', 'PENDING_MANAGER', 'PENDING_HR'].includes(r.status));
+        } else {
+            requests = await Request.getAllRequests(status);
+        }
 
         // Fetch employee details first to check branch
         const requestsWithDetails = await Promise.all(requests.map(async (reqItem) => {
@@ -152,8 +162,14 @@ async function updateRequestStatus(req, res) {
             return res.status(400).json({ success: false, message: 'Missing required fields' });
         }
 
-        if (!['APPROVED', 'REJECTED'].includes(status)) {
+        if (!['APPROVED', 'REJECTED', 'PENDING_HR'].includes(status)) {
             return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+
+        // Check if actionBy is provided (renamed from hrId to support manager)
+        const actionBy = req.body.actionBy || req.body.hrId || req.body.managerId;
+        if (!actionBy) {
+            return res.status(400).json({ success: false, message: 'Missing actionBy/hrId/managerId' });
         }
 
         // Fetch the request to check type
@@ -168,7 +184,7 @@ async function updateRequestStatus(req, res) {
         // I will trust that updateRequestStatus returns the updated Attributes, so I can check 'type' and 'data' from the return value?
         // updateRequestStatus returns 'ALL_NEW'.
 
-        const updatedRequest = await Request.updateRequestStatus(requestId, status, hrId, rejectionReason);
+        const updatedRequest = await Request.updateRequestStatus(requestId, status, actionBy, rejectionReason);
 
         // Side Effects
         if (status === 'APPROVED' && updatedRequest) {

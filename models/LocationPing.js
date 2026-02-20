@@ -20,6 +20,7 @@ async function savePing(pingData) {
         pingId: uuidv4(),
         employeeId: pingData.employeeId,
         branchId: pingData.branchId || null,
+        travelSessionId: pingData.travelSessionId || null, // Link to Travel Session if active
         latitude: pingData.latitude,
         longitude: pingData.longitude,
         isInsideGeofence: pingData.isInsideGeofence,

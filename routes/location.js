@@ -5,6 +5,7 @@ const Branch = require('../models/Branch');
 const LocationPing = require('../models/LocationPing');
 const Employee = require('../models/Employee');
 const Attendance = require('../models/Attendance');
+const TravelSession = require('../models/TravelSession');
 const { isWithinGeofence } = require('../utils/geofence');
 
 // Auto-checkout threshold: 15 consecutive pings outside geofence (15 minutes)
@@ -16,7 +17,7 @@ const OUTSIDE_GEOFENCE_CHECKOUT_THRESHOLD = 15;
  */
 router.post('/ping', async (req, res) => {
     try {
-        const { employeeId, latitude, longitude } = req.body;
+        const { employeeId, latitude, longitude, travelSessionId } = req.body;
 
         if (!employeeId || !latitude || !longitude) {
             return res.status(400).json({
@@ -80,7 +81,7 @@ router.post('/ping', async (req, res) => {
         let autoCheckedOut = false;
         let shouldContinueTracking = true;
 
-        if (!isInsideAnyBranch) {
+        if (!isInsideAnyBranch && !travelSessionId) {
             // Increment outside counter
             outsideGeofenceCount += 1;
             console.log(`[Location] ${employeeId} outside geofence. Count: ${outsideGeofenceCount}/${OUTSIDE_GEOFENCE_CHECKOUT_THRESHOLD}`);
@@ -119,11 +120,22 @@ router.post('/ping', async (req, res) => {
         const ping = await LocationPing.savePing({
             employeeId,
             branchId: closestBranch?.branchId || null,
+            travelSessionId: travelSessionId || null,
             latitude: userLat,
             longitude: userLng,
             isInsideGeofence: isInsideAnyBranch,
             distance: minDistance,
         });
+
+        // Update Travel Session path/distance if active
+        if (travelSessionId) {
+            await TravelSession.addPing(travelSessionId, {
+                lat: userLat,
+                lng: userLng,
+                timestamp: new Date().toISOString()
+            });
+        }
+
 
         // Update employee's tracking status (if not auto-checked out)
         if (shouldContinueTracking) {
@@ -169,8 +181,15 @@ router.post('/ping', async (req, res) => {
  */
 router.get('/employees', async (req, res) => {
     try {
+        const { branchId } = req.query;
+
         // Get all employees
-        const employees = await Employee.getAllEmployees();
+        let employees = await Employee.getAllEmployees();
+
+        // Filter by branch if requested
+        if (branchId) {
+            employees = employees.filter(e => e.branchId === branchId);
+        }
 
         // Try to get latest pings (may fail if table doesn't exist)
         let latestPings = [];

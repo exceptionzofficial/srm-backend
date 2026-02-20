@@ -6,11 +6,12 @@
  * @param {Object} params.attendance - Attendance record for the day (can be null)
  * @param {Object} params.leave - Approved leave request (can be null)
  * @param {Object} params.permission - Approved permission request (can be null)
+ * @param {Array} params.travel - Travel sessions for the day (can be empty)
  * @param {Object} params.settings - Global attendance settings
  * @param {string} params.date - Date string YYYY-MM-DD
  * @returns {Object} { status: [], remarks: string, stats: {} }
  */
-function calculateDailyStatus({ employee, attendance, leave, permission, settings, date }) {
+function calculateDailyStatus({ employee, attendance, leave, permission, travel, settings, date }) {
     const statuses = [];
     const remarks = [];
 
@@ -19,19 +20,32 @@ function calculateDailyStatus({ employee, attendance, leave, permission, setting
     const workEndTime = settings.workEndTime || '19:00';   // HH:mm
     const lateThresholdMinutes = settings.lateThresholdMinutes || 555; // 9:15 AM
     const halfDayThresholdMinutes = settings.halfDayThresholdMinutes || 240; // 4 hours duration? or 12:00 PM?
-    // Let's interpret halfDayThreshold as "Minimum minutes worked to be considered Full Day" or "Max minutes late to be Present"
-    // Usually it's duration based or cutoff time based.
-    // Based on previous `Attendance.js`: lateThreshold = 555 (9:15), halfDay = 720 (12:00checkin)
-    // New requirement list implies multiple tags.
 
     const targetDate = new Date(date);
     const dayOfWeek = targetDate.getDay(); // 0 = Sunday
+
+    // --- TRAVEL HANDLING ---
+    let travelMinutes = 0;
+    if (travel && travel.length > 0) {
+        // Calculate total travel duration (minutes)
+        travel.forEach(session => {
+            if (session.startTime && session.endTime) {
+                const start = new Date(session.startTime);
+                const end = new Date(session.endTime);
+                const durationMs = end - start;
+                travelMinutes += Math.floor(durationMs / 60000);
+            }
+        });
+
+        statuses.push('On Travel');
+        remarks.push(`Travel: ${Math.floor(travelMinutes / 60)}h ${travelMinutes % 60}m`);
+    }
 
     // 1. CHECK FOR WEEK OFF
     const isSunday = dayOfWeek === 0;
     if (isSunday) {
         // If they worked on Sunday, mark as "Overtime" or "Work on Week Off"
-        if (attendance) {
+        if (attendance || travelMinutes > 0) {
             statuses.push('Week off worked');
         } else {
             return { status: ['Week off'], remarks: 'Sunday Holiday', color: 'gray' };
@@ -47,29 +61,43 @@ function calculateDailyStatus({ employee, attendance, leave, permission, setting
         // If they checked in while on leave?
         if (attendance) {
             statuses.push('Present (On Leave)');
+        } else if (travelMinutes > 0) {
+            statuses.push('Present (Travel on Leave)');
         } else {
             return { status: statuses, remarks: remarks.join(', '), color: 'orange' };
         }
     }
 
     // 3. CHECK FOR ABSENT
-    if (!attendance) {
+    // If no attendance AND no travel -> Absent
+    if (!attendance && travelMinutes === 0) {
         // If not Sunday and not on Leave -> Absent
         if (!isSunday && !leave) {
             return { status: ['Absent'], remarks: 'No Check-in', color: 'red' };
         }
     }
 
-    // --- IF WE ARE HERE, EMPLOYEE HAS ATTENDANCE RECORD ---
+    // --- IF WE ARE HERE, EMPLOYEE HAS ATTENDANCE RECORD OR TRAVEL ---
+
+    let checkIn = null;
+    let checkOut = null;
+    let officeMinutes = 0;
 
     // Parse Times
-    const checkIn = new Date(attendance.checkInTime);
-    const checkOut = attendance.checkOutTime ? new Date(attendance.checkOutTime) : null;
+    if (attendance) {
+        checkIn = new Date(attendance.checkInTime);
+        checkOut = attendance.checkOutTime ? new Date(attendance.checkOutTime) : null;
+
+        if (checkOut) {
+            const durationMs = checkOut - checkIn;
+            officeMinutes = Math.floor(durationMs / 60000);
+        }
+    }
+
+    const totalWorkMinutes = officeMinutes + travelMinutes;
 
     // Helper to get minutes from midnight
     const getMinutes = (d) => d.getHours() * 60 + d.getMinutes();
-
-    const checkInMinutes = getMinutes(checkIn);
 
     // Parse Work Start/End
     const [startH, startM] = workStartTime.split(':').map(Number);
@@ -85,77 +113,110 @@ function calculateDailyStatus({ employee, attendance, leave, permission, setting
     // A. CHECK IN STATUS
     let isLate = false;
 
-    if (checkInMinutes > lateCutoff) {
-        // LATE CHECK IN
-        if (permission) {
-            statuses.push('Permission in');
-            remarks.push('Late entry permitted');
-        } else {
-            isLate = true;
-            statuses.push('Late in');
+    // Determine First Event Time (Office Check-in OR Travel Start)
+    let firstEventTime = checkIn;
+    if (travel && travel.length > 0) {
+        // Sort travel by start time to find earliest
+        const sortedTravel = [...travel].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+        const firstTravelStart = new Date(sortedTravel[0].startTime);
+        if (!firstEventTime || firstTravelStart < firstEventTime) {
+            firstEventTime = firstTravelStart;
         }
-
-        // Check for Half Day In (if VERY late)
-        // e.g. if checked in after 1:00 PM (13:00 = 780)
-        // using halfDayThresholdMinutes from settings (e.g., 720 = 12:00 PM)
-        if (checkInMinutes > (settings.halfDayThresholdMinutes || 720)) {
-            statuses.push('Half day in');
-        }
-    } else if (checkInMinutes < startMinutes - 30) {
-        // EARLY IN (e.g. 30 mins before)
-        statuses.push('Early in');
     }
 
-    // B. CHECK OUT STATUS
-    if (!checkOut) {
-        // No checkout yet
-        // If the date is TODAY, they might still be working.
-        // If the date is PAST, then "Shift out punch not done"
+    if (firstEventTime) {
+        const firstEventMinutes = getMinutes(firstEventTime);
+
+        if (firstEventMinutes > lateCutoff) {
+            // LATE CHECK IN
+            if (permission) {
+                statuses.push('Permission in');
+                remarks.push('Late entry permitted');
+            } else {
+                isLate = true;
+                statuses.push('Late in');
+            }
+
+            // Check for Half Day In (if VERY late)
+            if (firstEventMinutes > (settings.halfDayThresholdMinutes || 720)) {
+                statuses.push('Half day in');
+            }
+        } else if (attendance && getMinutes(checkIn) < startMinutes - 30) {
+            // EARLY IN (e.g. 30 mins before) - Only valid for Office Check-in usually
+            statuses.push('Early in');
+        }
+    }
+
+    // B. CHECK OUT STATUS / DURATION STATUS
+    // If working in office and not checked out
+    if (attendance && !checkOut) {
         const todayStr = new Date().toISOString().split('T')[0];
         if (date !== todayStr) {
             statuses.push('Shift out punch not done');
         } else {
-            // It's today. verify if shift is over.
             const now = new Date();
             const nowMinutes = getMinutes(now);
             if (nowMinutes > endMinutes + 60) {
-                statuses.push('Shift out punch not done'); // 1 hour past shift end and still no punch
+                statuses.push('Shift out punch not done');
             } else {
                 statuses.push('Working');
             }
         }
-    } else {
-        const checkOutMinutes = getMinutes(checkOut);
+    }
 
-        if (checkOutMinutes < endMinutes) {
-            // EARLY OUT
-            if (permission) {
-                // Check if permission covers early out? Assuming generic permission for now.
-                // Ideally split permissions into 'LATE_ENTRY' vs 'EARLY_EXIT'
-                // For now, if permission exists, we might be lenient, but user requested 'Permission in'.
-                // Let's just mark Early Out unless we want to be smart.
-                statuses.push('Early out');
-            } else {
-                statuses.push('Early out');
+    // Evaluate Duration logic if session is closed OR if only Travel exists
+    if (checkOut || (!attendance && travelMinutes > 0)) {
+        const expectedDuration = endMinutes - startMinutes; // e.g. 600 mins
+
+        if (attendance && checkOut) {
+            const checkOutMinutes = getMinutes(checkOut);
+
+            if (checkOutMinutes < endMinutes) {
+                // If Total Work is also less than expected, it's Early Out
+                if (totalWorkMinutes < (expectedDuration - 60)) {
+                    if (!permission) statuses.push('Early out');
+                }
+
+                // Half Day Out Check
+                if (totalWorkMinutes < 240) { // Less than 4 hours
+                    statuses.push('Half day out');
+                }
+            } else if (checkOutMinutes > endMinutes + 30) {
+                // LATE OUT (Overtime?)
+                statuses.push('Late out');
             }
-
-            // Check for Half Day Out (if VERY early)
-            // e.g. worked less than 4 hours?
-            const durationMinutes = (checkOut - checkIn) / (1000 * 60);
-            if (durationMinutes < 240) { // Less than 4 hours
+        } else if (!attendance && travelMinutes > 0) {
+            // If only Travel
+            if (totalWorkMinutes < 240) {
                 statuses.push('Half day out');
+            } else if (totalWorkMinutes < (expectedDuration - 60)) {
+                if (!permission) statuses.push('Early out');
             }
-
-        } else if (checkOutMinutes > endMinutes + 30) {
-            // LATE OUT (Overtime?)
-            statuses.push('Late out');
         }
     }
 
     // Default to Present if just Late In or plain
-    if (statuses.length === 0 || (statuses.length === 1 && statuses[0] === 'Early in')) {
-        statuses.push('Present');
+    // Add 'Present' if not already tagged with a form of presence
+    const presentTags = ['Present', 'Present (On Leave)', 'Present (Travel on Leave)'];
+    const hasPresent = statuses.some(s => presentTags.includes(s));
+
+    if (!hasPresent) {
+        if (statuses.length === 0 ||
+            (statuses.length === 1 && (statuses[0] === 'Early in' || statuses[0] === 'Late in' || statuses[0] === 'On Travel'))) {
+            statuses.push('Present');
+        }
+        // If we have 'Late in', 'On Travel', etc. we trigger presence.
+        if (statuses.length > 0 && !statuses.includes('Absent') && !statuses.includes('Shift out punch not done')) {
+            statuses.push('Present');
+        }
     }
+    // Deduplicate 'Present'
+    if (statuses.filter(s => s === 'Present').length > 1) {
+        // ensure only one 'Present'
+        const idx = statuses.indexOf('Present');
+        statuses.splice(idx + 1);
+    }
+
 
     // Color Coding
     let color = 'green';
@@ -164,13 +225,15 @@ function calculateDailyStatus({ employee, attendance, leave, permission, setting
     if (statuses.includes('Leave')) color = 'blue';
 
     return {
-        status: statuses,
+        status: [...new Set(statuses)], // Deduplicate
         remarks: remarks.join(', ') || (statuses.includes('Present') ? 'On Time' : ''),
         color,
         times: {
-            in: new Date(attendance.checkInTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }),
-            out: attendance.checkOutTime ? new Date(attendance.checkOutTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : '-'
-        }
+            in: attendance ? new Date(attendance.checkInTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : (travel && travel.length ? 'Travel Start' : '-'),
+            out: attendance && attendance.checkOutTime ? new Date(attendance.checkOutTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : (travel && travel.length ? 'Travel End' : '-')
+        },
+        travelMinutes,
+        totalWorkMinutes
     };
 }
 

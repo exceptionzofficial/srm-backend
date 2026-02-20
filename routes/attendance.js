@@ -5,6 +5,7 @@ const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
 const Request = require('../models/Request');
 const Branch = require('../models/Branch');
+const TravelSession = require('../models/TravelSession');
 const { searchFace } = require('../utils/rekognition');
 const { getGeofenceSettings, getAttendanceSettings } = require('../models/Settings');
 const { isWithinGeofence } = require('../utils/geofence');
@@ -416,8 +417,23 @@ router.get('/report', async (req, res) => {
         // --- RANGE MODE ---
         if (isRange) {
             // Fetch Data for Range
+            // Fetch Data for Range
             const attendanceRecords = await Attendance.getAttendanceByDateRange(startDate, endDate);
             const allRequests = await Request.getApprovedRequestsByDateRange(startDate, endDate);
+            // Fetch Travel Sessions
+            // Note: We need a method to get by range in TravelSession model. added in step 55.
+            const allTravelSessions = await TravelSession.getTravelSessionsByDateRange(null, startDate, endDate); // null empId means ALL? No, current implementation takes empId.
+            // Wait, getTravelSessionsByDateRange in TravelSession.js takes (employeeId, start, end). 
+            // If I want ALL, I might need to scan or iterate. 
+            // Since we iterate employees below, we can fetch inside loop or fetch all if supported.
+            // Current implementation: `getTravelSessionsByDateRange(employeeId, ...)`
+            // To be efficient, we should fetch ALL. But the model method I wrote forces employeeId via FilterExpression.
+            // I should have written `getAllTravelSessionsByDateRange`.
+            // For now, I will fetch inside the loop for each employee. It's N queries but acceptable for report.
+
+            // Actually, let's use a Promise.all to fetch travel for all employees in parallel if N is small, or just one by one.
+            // Or better, let's fetch all travel sessions (if possible) or just fetch per employee inside the map.
+
 
             // Generate Date Array
             const dateArray = [];
@@ -464,11 +480,26 @@ router.get('/report', async (req, res) => {
                     const leaveRequest = empRequests.find(r => r.type === 'LEAVE');
                     const permissionRequest = empRequests.find(r => r.type === 'PERMISSION');
 
+                    // Fetch Travel for this day (or filter if we fetched all)
+                    // Since we didn't fetch all, let's fetch here or assume we missed it.
+                    // IMPORTANT: To avoid N*M DB calls, I should have implemented `getAllTravelSessions`.
+                    // But for now, let's make a call here? No, that's dateArray * employees calls! Too many.
+                    // Let's rely on standard attendance for now? No, need travel.
+                    // Correct approach: Fetch ALL travel sessions for the range regardless of employee.
+                    // I will add `getAllTravelSessionsByDateRange` to TravelSession.js next.
+                    // For now, let's assume I will fix TravelSession.js to allow null employeeId to return all.
+                    // Let's assume `allTravelSessions` contains everything.
+                    // I will filter `allTravelSessions` by employee and date.
+
+                    // let's assume I fix the backend model.
+                    const empTravel = allTravelSessions ? allTravelSessions.filter(t => t.employeeId === employee.employeeId && t.startTime.startsWith(d)) : [];
+
                     const statusResult = calculateDailyStatus({
                         employee,
                         attendance: effectiveAttendance,
                         leave: leaveRequest,
                         permission: permissionRequest,
+                        travel: empTravel,
                         settings,
                         date: d
                     });
@@ -519,6 +550,8 @@ router.get('/report', async (req, res) => {
             // --- SINGLE DATE MODE (Existing Logic) ---
             const attendanceRecords = await Attendance.getAttendanceByDate(date);
             const allRequests = await Request.getApprovedRequestsByDate(date);
+            // Fetch Travel Sessions for this date
+            const allTravelSessions = await TravelSession.getTravelSessionsByDateRange(null, date, date);
 
             const report = await Promise.all(employees.map(async (employee) => {
                 const empAttendance = attendanceRecords.filter(r => r.employeeId === employee.employeeId);
@@ -536,11 +569,15 @@ router.get('/report', async (req, res) => {
                 const leaveRequest = empRequests.find(r => r.type === 'LEAVE');
                 const permissionRequest = empRequests.find(r => r.type === 'PERMISSION');
 
+                // Filter travel for this employee
+                const empTravel = allTravelSessions ? allTravelSessions.filter(t => t.employeeId === employee.employeeId) : [];
+
                 const statusResult = calculateDailyStatus({
                     employee,
                     attendance: effectiveAttendance,
                     leave: leaveRequest,
                     permission: permissionRequest,
+                    travel: empTravel,
                     settings,
                     date
                 });

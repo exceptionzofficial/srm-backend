@@ -132,22 +132,23 @@ router.post('/verify-id', async (req, res) => {
 // Get all employees
 router.get('/', async (req, res) => {
     try {
-        const { branchId } = req.query; // Check for branchId in query params
-        const employees = await Employee.getAllEmployees();
+        const { branchId, includeManagers } = req.query; // Check for branchId in query params
+
+        const [employees, managers] = await Promise.all([
+            Employee.getAllEmployees(),
+            Manager.getAllManagers()
+        ]);
+
+        let allStaff = [...employees, ...managers];
 
         // Filter by branch if branchId is provided
-        let filteredEmployees = employees;
         if (branchId) {
-            filteredEmployees = employees.filter(e => e.branchId === branchId);
+            allStaff = allStaff.filter(e => e.branchId === branchId);
         }
-
-        // Also fetch managers if needed? For now, just employees as this is "Employee List"
-        // If user wants managers listed, we can append them.
-        // Let's assume this route is strictly for employees list.
 
         res.json({
             success: true,
-            employees: filteredEmployees,
+            employees: allStaff,
         });
     } catch (error) {
         console.error('Error fetching employees:', error);

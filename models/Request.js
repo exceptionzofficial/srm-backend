@@ -76,23 +76,42 @@ async function getAllRequests(status = null) {
 
 /**
  * Update Request Status (Approve/Reject)
+ * Supports multi-stage approval: PENDING_MANAGER -> PENDING_HR -> APPROVED
  */
-async function updateRequestStatus(requestId, status, hrId, rejectionReason = null) {
+async function updateRequestStatus(requestId, status, actionBy, rejectionReason = null) {
     const timestamp = new Date().toISOString();
 
-    const updateExpression = ['#status = :status', '#updatedAt = :updatedAt', '#hrActionBy = :hrId', '#hrActionAt = :now'];
+    const updateExpression = ['#status = :status', '#updatedAt = :updatedAt'];
     const expressionAttributeNames = {
         '#status': 'status',
         '#updatedAt': 'updatedAt',
-        '#hrActionBy': 'hrActionBy',
-        '#hrActionAt': 'hrActionAt'
     };
     const expressionAttributeValues = {
         ':status': status,
         ':updatedAt': timestamp,
-        ':hrId': hrId,
-        ':now': timestamp
     };
+
+    // Generic "Action By" recording
+    // If it's a Manager Action
+    if (status === 'PENDING_HR' || status === 'REJECTED') {
+        updateExpression.push('#managerActionBy = :actionBy', '#managerActionAt = :now');
+        expressionAttributeNames['#managerActionBy'] = 'managerActionBy';
+        expressionAttributeNames['#managerActionAt'] = 'managerActionAt';
+        expressionAttributeValues[':actionBy'] = actionBy;
+        expressionAttributeValues[':now'] = timestamp;
+    }
+
+    // If it's an HR Action (Final Approval or Rejection by HR)
+    if (status === 'APPROVED' || (status === 'REJECTED' && !expressionAttributeNames['#managerActionBy'])) {
+        // Note: If Manager rejected, we already set managerActionBy. 
+        // If HR rejects, we set hrActionBy. 
+        // Simple heuristic: If status is APPROVED, it's HR.
+        updateExpression.push('#hrActionBy = :actionBy', '#hrActionAt = :now');
+        expressionAttributeNames['#hrActionBy'] = 'hrActionBy';
+        expressionAttributeNames['#hrActionAt'] = 'hrActionAt';
+        expressionAttributeValues[':actionBy'] = actionBy;
+        expressionAttributeValues[':now'] = timestamp;
+    }
 
     if (rejectionReason) {
         updateExpression.push('#rejectionReason = :reason');
