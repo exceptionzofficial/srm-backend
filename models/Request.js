@@ -30,6 +30,22 @@ async function createRequest(requestData) {
 }
 
 /**
+ * Get Request by ID
+ */
+async function getRequestById(requestId) {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'requestId = :reqId',
+        ExpressionAttributeValues: {
+            ':reqId': requestId,
+        },
+    });
+
+    const response = await docClient.send(command);
+    return response.Items && response.Items.length > 0 ? response.Items[0] : null;
+}
+
+/**
  * Get Requests by Employee ID
  */
 async function getRequestsByEmployee(employeeId) {
@@ -241,11 +257,37 @@ async function getRequestsByDateRange(startDate, endDate) {
     });
 }
 
+/**
+ * Update Request Data (Internal metadata updates)
+ */
+async function updateRequestData(requestId, newData) {
+    const timestamp = new Date().toISOString();
+    const command = new UpdateCommand({
+        TableName: TABLE_NAME,
+        Key: { requestId },
+        UpdateExpression: 'SET #data = :data, #updatedAt = :updatedAt',
+        ExpressionAttributeNames: {
+            '#data': 'data',
+            '#updatedAt': 'updatedAt',
+        },
+        ExpressionAttributeValues: {
+            ':data': newData,
+            ':updatedAt': timestamp,
+        },
+        ReturnValues: 'ALL_NEW',
+    });
+
+    const response = await docClient.send(command);
+    return response.Attributes;
+}
+
 module.exports = {
     createRequest,
+    getRequestById,
     getRequestsByEmployee,
     getAllRequests,
     updateRequestStatus,
+    updateRequestData, // Exporting new method
     getApprovedPermissions,
     getApprovedRequestsByDate,
     getApprovedRequestsByDateRange,

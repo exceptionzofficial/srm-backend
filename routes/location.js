@@ -205,6 +205,36 @@ router.get('/employees', async (req, res) => {
             pingMap[ping.employeeId] = ping;
         });
 
+        // Get all active travel sessions
+        let activeSessions = [];
+        try {
+            activeSessions = await TravelSession.getAllActiveTravelSessions();
+        } catch (activeErr) {
+            console.error('Error fetching active travel sessions:', activeErr);
+        }
+
+        // Create a map of employeeId -> active session
+        const sessionMap = {};
+        activeSessions.forEach(sess => {
+            sessionMap[sess.employeeId] = sess;
+        });
+
+        // Get all requests for active sessions
+        const requestIdMap = {};
+        const requests = [];
+        for (const sess of activeSessions) {
+            if (sess.requestId) {
+                try {
+                    const reqData = await Request.getRequestById(sess.requestId);
+                    if (reqData) {
+                        requestIdMap[sess.requestId] = reqData;
+                    }
+                } catch (reqErr) {
+                    console.error(`Error fetching request ${sess.requestId}:`, reqErr);
+                }
+            }
+        }
+
         // Get all branches for reference
         const branches = await Branch.getAllBranches();
         const branchMap = {};
@@ -236,6 +266,10 @@ router.get('/employees', async (req, res) => {
                 isInsideGeofence = emp.isInsideGeofence || false;
             }
 
+            // Get session and request info
+            const activeSession = sessionMap[emp.employeeId];
+            const associatedRequest = activeSession ? requestIdMap[activeSession.requestId] : null;
+
             return {
                 employeeId: emp.employeeId,
                 name: emp.name,
@@ -245,6 +279,14 @@ router.get('/employees', async (req, res) => {
                 isTracking: emp.isTracking || false,
                 isOnline,
                 isInsideGeofence,
+                tripDetails: activeSession ? {
+                    sessionId: activeSession.sessionId,
+                    requestId: activeSession.requestId,
+                    startTime: activeSession.startTime,
+                    destination: associatedRequest?.data?.destination || 'Branch Travel',
+                    destinationAddress: associatedRequest?.data?.destination || 'N/A',
+                    totalDistance: activeSession.totalDistance || 0,
+                } : null,
                 lastLocation: ping ? {
                     latitude: ping.latitude,
                     longitude: ping.longitude,

@@ -212,10 +212,30 @@ async function addPing(sessionId, location) {
     }
 }
 
+/**
+ * Get ALL Active Travel Sessions
+ */
+async function getAllActiveTravelSessions() {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: '#status = :status',
+        ExpressionAttributeNames: {
+            '#status': 'status'
+        },
+        ExpressionAttributeValues: {
+            ':status': 'STARTED'
+        },
+    });
+
+    const response = await docClient.send(command);
+    return response.Items || [];
+}
+
 module.exports = {
     startTravelSession,
     endTravelSession,
     getActiveTravelSession,
+    getAllActiveTravelSessions,
     getTravelSessionById,
     getTravelSessionsByDateRange,
     addPing
