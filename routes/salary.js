@@ -55,12 +55,11 @@ router.get('/calculate/:employeeId', async (req, res) => {
         const allRequests = await Request.getRequestsByEmployee(employeeId);
 
         const now = new Date();
-        const currentMonth = month ? parsInt(month) : now.getMonth() + 1; // 1-12
+        const currentMonth = month ? parseInt(month) : now.getMonth() + 1; // 1-12
         const currentYear = year ? parseInt(year) : now.getFullYear();
 
         const approvedAdvances = allRequests.filter(req => {
             if (req.type !== 'ADVANCE' || req.status !== 'APPROVED') return false;
-            // Check date (req.createdAt or req.data.date)
             // Assuming advance is deduced in the month it was requested/approved
             const reqDate = new Date(req.createdAt);
             return reqDate.getMonth() + 1 === currentMonth && reqDate.getFullYear() === currentYear;
@@ -70,16 +69,35 @@ router.get('/calculate/:employeeId', async (req, res) => {
             return sum + (parseFloat(req.data.amount) || 0);
         }, 0);
 
-        const payableSalary = Math.max(0, fixedSalary - totalAdvance);
+        // Standard PF Calculation (12% of basic if eligible)
+        let pfDeduction = 0;
+        if (employee.isPfEligible && employee.fixedBasic) {
+            pfDeduction = Math.round(employee.fixedBasic * 0.12);
+        }
 
         res.json({
             success: true,
             employeeId,
             month: currentMonth,
             year: currentYear,
-            fixedSalary,
+            fixedSalary: employee.fixedSalary || 0,
+            components: {
+                basic: employee.fixedBasic || 0,
+                hra: employee.fixedHra || 0,
+                conveyance: employee.fixedOtherAllowance || 0, // Fallback
+                medical: 0,
+                special: employee.fixedSplAllowance || 0,
+                bonus: 0
+            },
+            deductions: {
+                pf: pfDeduction,
+                esi: employee.esiContribution || 0,
+                pt: 0,
+                tds: 0,
+                advance: totalAdvance
+            },
             totalAdvance,
-            payableSalary,
+            pfDeduction,
             advanceRequests: approvedAdvances
         });
 
