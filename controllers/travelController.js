@@ -66,12 +66,18 @@ async function endTravel(req, res) {
         // Mark the associated request as travel-completed
         if (session && session.requestId) {
             try {
-                // We add a flag to the data object of the request
-                const requestResult = await Request.getRequestsByEmployee(session.employeeId);
-                const targetRequest = requestResult.find(r => r.requestId === session.requestId);
-                if (targetRequest && targetRequest.data) {
-                    const updatedData = { ...targetRequest.data, travelStatus: 'COMPLETED' };
+                // Fetch the specific request directly
+                const targetRequest = await Request.getRequestById(session.requestId);
+                if (targetRequest) {
+                    const updatedData = {
+                        ...(targetRequest.data || {}),
+                        travelStatus: 'COMPLETED',
+                        travelEndTime: new Date().toISOString()
+                    };
                     await Request.updateRequestData(session.requestId, updatedData);
+                    console.log(`[travelController] Marked request ${session.requestId} as COMPLETED`);
+                } else {
+                    console.warn(`[travelController] Could not find request ${session.requestId} to mark as COMPLETED`);
                 }
             } catch (err) {
                 console.error('Error marking request as travel-completed:', err);
