@@ -1007,7 +1007,23 @@ router.get('/status/:employeeId', async (req, res) => {
             console.error('Error fetching permissions for duration:', e);
         }
 
-        const totalWorkDurationMinutes = attendanceDurationMinutes + permissionDurationMinutes;
+        // 3. Fetch Completed Travel Sessions for Today
+        let travelDurationMinutes = 0;
+        try {
+            const todayTravel = await TravelSession.getTravelSessionsByDateRange(employeeId, todayDateStr, todayDateStr);
+            todayTravel.forEach(session => {
+                if (session.startTime && session.endTime) {
+                    const start = new Date(session.startTime);
+                    const end = new Date(session.endTime);
+                    const durationMs = end - start;
+                    travelDurationMinutes += durationMs / (1000 * 60);
+                }
+            });
+        } catch (e) {
+            console.error('Error fetching travel sessions for duration:', e);
+        }
+
+        const totalWorkDurationMinutes = attendanceDurationMinutes + permissionDurationMinutes + travelDurationMinutes;
 
         res.json({
             success: true,
@@ -1047,6 +1063,7 @@ router.get('/status/:employeeId', async (req, res) => {
                 // Duration Info
                 attendanceDurationMinutes: Math.round(attendanceDurationMinutes),
                 permissionDurationMinutes: Math.round(permissionDurationMinutes),
+                travelDurationMinutes: Math.round(travelDurationMinutes),
                 totalWorkDurationMinutes: Math.round(totalWorkDurationMinutes),
 
                 openSession: openSession ? {
