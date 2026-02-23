@@ -127,7 +127,15 @@ async function createEmployee(employeeData) {
             photoUrl: employeeData.documents?.photoUrl || employeeData.photoUrl || null,
         },
 
-        // Salary Breakdown (Keeping existing flat structure for backward compatibility if needed, but syncing with object)
+        // Salary Breakdown
+        salaryBreakdown: {
+            basic: employeeData.salaryBreakdown?.basic || employeeData.basicSalary || 0,
+            hra: employeeData.salaryBreakdown?.hra || employeeData.hra || 0,
+            specialAllowance: employeeData.salaryBreakdown?.specialAllowance || employeeData.specialAllowance || 0,
+            otherAllowance: employeeData.salaryBreakdown?.otherAllowance || employeeData.otherAllowance || 0,
+            grossSalary: employeeData.salaryBreakdown?.grossSalary || employeeData.fixedSalary || 0,
+        },
+        fixedSalary: employeeData.salaryBreakdown?.grossSalary || employeeData.fixedSalary || 0,
         fixedBasic: employeeData.fixedBasic ? (parseFloat(employeeData.fixedBasic) || 0) : 0,
         fixedHra: employeeData.fixedHra ? (parseFloat(employeeData.fixedHra) || 0) : 0,
         fixedSplAllowance: employeeData.fixedSplAllowance ? (parseFloat(employeeData.fixedSplAllowance) || 0) : 0,
