@@ -92,7 +92,7 @@ async function updateManager(managerId, updates) {
     const expressionAttributeValues = {};
 
     Object.entries(updates).forEach(([key, value]) => {
-        if (key !== 'managerId') {
+        if (key !== 'managerId' && key !== 'updatedAt' && key !== 'createdAt') {
             updateExpressions.push(`#${key} = :${key}`);
             expressionAttributeNames[`#${key}`] = key;
             expressionAttributeValues[`:${key}`] = value;

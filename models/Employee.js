@@ -179,7 +179,8 @@ async function updateEmployee(employeeId, updates) {
     const expressionAttributeValues = {};
 
     Object.entries(updates).forEach(([key, value]) => {
-        if (key !== 'employeeId') {
+        // Skip keys and manually handled fields to avoid duplicates in UpdateExpression
+        if (key !== 'employeeId' && key !== 'updatedAt' && key !== 'createdAt') {
             updateExpressions.push(`#${key} = :${key}`);
             expressionAttributeNames[`#${key}`] = key;
             expressionAttributeValues[`:${key}`] = value;
