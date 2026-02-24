@@ -5,12 +5,20 @@ const { getAttendanceSettings } = require('./Settings');
 
 const TABLE_NAME = process.env.DYNAMODB_ATTENDANCE_TABLE || 'srm-attendance-table';
 
+const getLocalDateString = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
 /**
  * Create attendance record (check-in)
  */
 async function createAttendance(attendanceData) {
     const timestamp = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = getLocalDateString(); // YYYY-MM-DD
     const status = await determineStatusAsync(new Date());
 
     const item = {
@@ -40,7 +48,7 @@ async function createAttendance(attendanceData) {
  * Get today's attendance for employee (latest unchecked-out session)
  */
 async function getTodayAttendance(employeeId) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     // Using scan with filter since we may not have GSI
     const command = new ScanCommand({
@@ -72,7 +80,7 @@ async function getTodayAttendance(employeeId) {
  * Get all today's attendance records for employee (for multiple sessions)
  */
 async function getAllTodayAttendance(employeeId) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
 
     const command = new ScanCommand({
         TableName: TABLE_NAME,

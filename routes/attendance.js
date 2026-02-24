@@ -440,7 +440,10 @@ router.get('/report', async (req, res) => {
             let currentDate = new Date(startDate);
             const end = new Date(endDate);
             while (currentDate <= end) {
-                dateArray.push(currentDate.toISOString().split('T')[0]);
+                const y = currentDate.getFullYear();
+                const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+                const d = String(currentDate.getDate()).padStart(2, '0');
+                dateArray.push(`${y}-${m}-${d}`);
                 currentDate.setDate(currentDate.getDate() + 1);
             }
 
@@ -455,6 +458,7 @@ router.get('/report', async (req, res) => {
                     weekOff: 0,
                     leave: 0,
                     permission: 0,
+                    travel: 0,
                     totalDays: dateArray.length
                 };
 
@@ -515,6 +519,7 @@ router.get('/report', async (req, res) => {
                     if (s.includes('Half day in') || s.includes('Half day out')) stats.halfDay++;
                     if (s.includes('Leave')) stats.leave++;
                     if (s.includes('Permission in')) stats.permission++;
+                    if (s.includes('On Travel')) stats.travel++;
                     if (s.includes('Week off')) stats.weekOff++;
 
                     // Store daily breakdown mainly for CSV
@@ -658,8 +663,9 @@ router.get('/calendar/:employeeId', async (req, res) => {
         const startDate = new Date(targetYear, targetMonth, 1);
         const endDate = new Date(targetYear, targetMonth + 1, 0);
 
-        const startStr = startDate.toISOString().split('T')[0];
-        const endStr = endDate.toISOString().split('T')[0];
+        const startStr = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-01`;
+        const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+        const endStr = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
         // Fetch Data
         const attendanceRecords = await Attendance.getAttendanceByDateRange(startStr, endStr);
@@ -671,8 +677,8 @@ router.get('/calendar/:employeeId', async (req, res) => {
         const daysInMonth = endDate.getDate();
 
         for (let day = 1; day <= daysInMonth; day++) {
+            const dateStr = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const dateObj = new Date(targetYear, targetMonth, day);
-            const dateStr = dateObj.toISOString().split('T')[0];
             const dayOfWeek = dateObj.getDay(); // 0=Sun
 
             // 1. Identify Holiday
@@ -701,6 +707,10 @@ router.get('/calendar/:employeeId', async (req, res) => {
             const leave = daysRequests.find(r => r.type === 'LEAVE');
             const permission = daysRequests.find(r => r.type === 'PERMISSION');
             const advance = daysRequests.find(r => r.type === 'ADVANCE');
+
+            // 5. Find Travel Sessions for this day
+            const dayTravel = allTravelSessions ? allTravelSessions.filter(t => t.startTime.startsWith(dateStr)) : [];
+            const hasTravel = dayTravel.length > 0;
 
             // Determine Status for UI Tags
             const events = [];
@@ -751,6 +761,11 @@ router.get('/calendar/:employeeId', async (req, res) => {
                 events.push({ type: type, label: label, status: permission.status });
             }
 
+            // Always show ON TRAVEL if exists
+            if (hasTravel) {
+                events.push({ type: 'travel', label: 'On Travel' });
+            }
+
             // Always show Advance if exists
             if (advance) {
                 let label = `Advance: ₹${advance.data?.amount}`;
@@ -795,6 +810,39 @@ router.get('/calendar/:employeeId', async (req, res) => {
                     duration: duration,
                     status: firstRecord.status
                 };
+            }
+
+            // Add Travel Details if no office attendance but has travel
+            if (hasTravel) {
+                if (!details) {
+                    // Calculate Travel Duration
+                    let travelTotalSecs = 0;
+                    dayTravel.forEach(t => {
+                        if (t.startTime && t.endTime) {
+                            travelTotalSecs += Math.floor((new Date(t.endTime) - new Date(t.startTime)) / 1000);
+                        }
+                    });
+                    const h = Math.floor(travelTotalSecs / 3600);
+                    const m = Math.floor((travelTotalSecs % 3600) / 60);
+
+                    details = {
+                        checkIn: 'Travel Only',
+                        checkOut: '-',
+                        duration: `${h}h ${m}m`,
+                        status: 'On Travel'
+                    };
+                } else {
+                    // Append Travel to existing duration or mention it
+                    let travelTotalSecs = 0;
+                    dayTravel.forEach(t => {
+                        if (t.startTime && t.endTime) {
+                            travelTotalSecs += Math.floor((new Date(t.endTime) - new Date(t.startTime)) / 1000);
+                        }
+                    });
+                    const h = Math.floor(travelTotalSecs / 3600);
+                    const m = Math.floor((travelTotalSecs % 3600) / 60);
+                    details.duration += ` (+ Travel: ${h}h ${m}m)`;
+                }
             }
 
             calendarData.push({
@@ -971,7 +1019,11 @@ router.get('/status/:employeeId', async (req, res) => {
         }
 
         // --- DURATION CALCULATION (Attendance + Permissions) ---
-        const todayDateStr = now.toISOString().split('T')[0];
+        const y_today = now.getFullYear();
+        const m_today = String(now.getMonth() + 1).padStart(2, '0');
+        const d_today = String(now.getDate()).padStart(2, '0');
+        const todayDateStr = `${y_today}-${m_today}-${d_today}`;
+
 
         // 1. Calculate Attendance Duration (from all sessions today)
         let attendanceDurationMinutes = 0;
