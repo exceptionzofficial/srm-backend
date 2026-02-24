@@ -671,6 +671,7 @@ router.get('/calendar/:employeeId', async (req, res) => {
         const attendanceRecords = await Attendance.getAttendanceByDateRange(startStr, endStr);
         // CHANGED: Fetch ALL requests, not just approved ones
         const allRequests = await Request.getRequestsByDateRange(startStr, endStr);
+        const allTravelSessions = await TravelSession.getTravelSessionsByDateRange(employeeId, startStr, endStr);
 
         // Generate Day Grid
         const calendarData = [];
