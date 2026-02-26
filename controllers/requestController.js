@@ -110,10 +110,10 @@ async function getAllRequests(req, res) {
 
         // "PENDING" in UI should cover all pending stages
         if (status === 'PENDING') {
-            // Fetch all (status=null) and filter in memory since we need multiple statuses
-            // Optimization: Update Request.getAllRequests to support array/IN clause
             const allRequests = await Request.getAllRequests(null);
-            requests = allRequests.filter(r => ['PENDING', 'PENDING_MANAGER', 'PENDING_HR'].includes(r.status));
+            requests = allRequests.filter(r =>
+                ['PENDING', 'PENDING_MANAGER', 'PENDING_HR', 'PENDING_FINANCE', 'PENDING_SUPER_ADMIN'].includes(r.status)
+            );
         } else {
             requests = await Request.getAllRequests(status);
         }
@@ -122,12 +122,15 @@ async function getAllRequests(req, res) {
         const requestsWithDetails = await Promise.all(requests.map(async (reqItem) => {
             try {
                 const employee = await Employee.getEmployeeById(reqItem.employeeId);
+                const hasPending = reqItem.type === 'ADVANCE' ? await Request.hasPendingAdvance(reqItem.employeeId) : false;
+
                 return {
                     ...reqItem,
                     employeeName: employee ? employee.name || `${employee.firstName} ${employee.lastName}` : 'Unknown',
                     department: employee ? employee.department : 'Unknown',
-                    branchId: employee ? employee.branchId : null, // Add branchId explicitly
-                    branch: employee ? employee.branchId : 'Unknown' // Keep existing mapping
+                    branchId: employee ? employee.branchId : null,
+                    branch: employee ? employee.branchId : 'Unknown',
+                    hasOtherPending: hasPending // Flag for UI
                 };
             } catch (e) {
                 return reqItem;
@@ -162,7 +165,7 @@ async function updateRequestStatus(req, res) {
             return res.status(400).json({ success: false, message: 'Missing required fields' });
         }
 
-        if (!['APPROVED', 'REJECTED', 'PENDING_HR'].includes(status)) {
+        if (!['APPROVED', 'REJECTED', 'PENDING_HR', 'PENDING_SUPER_ADMIN', 'PENDING_FINANCE'].includes(status)) {
             return res.status(400).json({ success: false, message: 'Invalid status' });
         }
 
@@ -172,19 +175,45 @@ async function updateRequestStatus(req, res) {
             return res.status(400).json({ success: false, message: 'Missing actionBy/hrId/managerId' });
         }
 
-        // Fetch the request to check type
-        // Note: Request model doesn't have getById exposed in 'Request.js' exports but updateRequestStatus logic in model updates it directly.
-        // We need to fetch it first to do side effects.
-        // Let's implement a quick getById or Scan.
-        // Wait, Request.js doesn't export getById.
-        // But we DO need to know what we are approving to deduct balance.
-        // I'll scan or query all requests. Ideally Request.js should have getById.
-        // I will modify Request.js to add getRequestById first, or just list all and find? No, inefficient.
-        // Let's check Request.js again. It has updateRequestStatus.
-        // I will trust that updateRequestStatus returns the updated Attributes, so I can check 'type' and 'data' from the return value?
-        // updateRequestStatus returns 'ALL_NEW'.
+        // Fetch the request to check type and data for workflow logic
+        const existingRequest = await Request.getRequestById(requestId);
+        if (!existingRequest) {
+            return res.status(404).json({ success: false, message: 'Request not found' });
+        }
 
-        const updatedRequest = await Request.updateRequestStatus(requestId, status, actionBy, rejectionReason);
+        let targetStatus = status;
+
+        // Custom Workflow Logic for ADVANCE requests
+        if (existingRequest.type === 'ADVANCE' && status === 'APPROVED') {
+            const amount = existingRequest.data?.amount || 0;
+            const employeeId = existingRequest.employeeId;
+
+            // Finance Manager Approving
+            if (actionBy.toLowerCase().includes('finance')) {
+                const hasPending = await Request.hasPendingAdvance(employeeId);
+                // The current request is already in the pending list, but hasPendingAdvance checks for OTHER existing ones too.
+                // Wait, hasPendingAdvance will find THIS request too if its status is PENDING_FINANCE.
+                // We should check if there are OTHER requests.
+                // Let's refine hasPendingAdvance or check count.
+
+                // Let's assume the user means "any other approved/pending advance"
+                if (amount > 10000 || hasPending) {
+                    targetStatus = 'PENDING_SUPER_ADMIN';
+                } else {
+                    targetStatus = 'PENDING_HR';
+                }
+            }
+            // Super Admin Permitting
+            else if (actionBy.toLowerCase().includes('super')) {
+                targetStatus = 'PENDING_HR';
+            }
+            // HR Final Approval
+            else if (actionBy.toLowerCase().includes('hr')) {
+                targetStatus = 'APPROVED';
+            }
+        }
+
+        const updatedRequest = await Request.updateRequestStatus(requestId, targetStatus, actionBy, rejectionReason);
 
         // Side Effects
         if (status === 'APPROVED' && updatedRequest) {

@@ -10,11 +10,20 @@ const TABLE_NAME = process.env.DYNAMODB_REQUEST_TABLE || 'srm-request-table';
  */
 async function createRequest(requestData) {
     const timestamp = new Date().toISOString();
+
+    // Initial status logic
+    let initialStatus = 'PENDING';
+    if (requestData.type === 'ADVANCE') {
+        initialStatus = 'PENDING_FINANCE';
+    } else if (['LEAVE', 'PERMISSION', 'BRANCH_TRAVEL'].includes(requestData.type)) {
+        initialStatus = 'PENDING_MANAGER';
+    }
+
     const item = {
         requestId: uuidv4(),
         employeeId: requestData.employeeId,
         type: requestData.type, // 'ADVANCE', 'LEAVE', 'PERMISSION'
-        status: 'PENDING', // 'PENDING', 'APPROVED', 'REJECTED'
+        status: initialStatus,
         data: requestData.data || {}, // { amount, reason, date, duration, etc. }
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -92,7 +101,9 @@ async function getAllRequests(status = null) {
 
 /**
  * Update Request Status (Approve/Reject)
- * Supports multi-stage approval: PENDING_MANAGER -> PENDING_HR -> APPROVED
+ * Supports multi-stage approval: 
+ * - Standard: PENDING_MANAGER -> PENDING_HR -> APPROVED
+ * - Advance: PENDING_FINANCE -> (PENDING_SUPER_ADMIN) -> PENDING_HR -> APPROVED
  */
 async function updateRequestStatus(requestId, status, actionBy, rejectionReason = null) {
     const timestamp = new Date().toISOString();
@@ -107,21 +118,33 @@ async function updateRequestStatus(requestId, status, actionBy, rejectionReason 
         ':updatedAt': timestamp,
     };
 
-    // Generic "Action By" recording
-    // If it's a Manager Action
-    if (status === 'PENDING_HR' || status === 'REJECTED') {
+    // Record Action Details based on the transition
+    if (status === 'REJECTED') {
+        updateExpression.push('#rejectedBy = :actionBy', '#rejectedAt = :now');
+        expressionAttributeNames['#rejectedBy'] = 'rejectedBy';
+        expressionAttributeNames['#rejectedAt'] = 'rejectedAt';
+        expressionAttributeValues[':actionBy'] = actionBy;
+        expressionAttributeValues[':now'] = timestamp;
+    } else if (status === 'PENDING_SUPER_ADMIN' || (status === 'PENDING_HR' && actionBy.toLowerCase().includes('finance'))) {
+        updateExpression.push('#financeActionBy = :actionBy', '#financeActionAt = :now');
+        expressionAttributeNames['#financeActionBy'] = 'financeActionBy';
+        expressionAttributeNames['#financeActionAt'] = 'financeActionAt';
+        expressionAttributeValues[':actionBy'] = actionBy;
+        expressionAttributeValues[':now'] = timestamp;
+    } else if (status === 'PENDING_HR' && actionBy.toLowerCase().includes('super')) {
+        updateExpression.push('#superAdminActionBy = :actionBy', '#superAdminActionAt = :now');
+        expressionAttributeNames['#superAdminActionBy'] = 'superAdminActionBy';
+        expressionAttributeNames['#superAdminActionAt'] = 'superAdminActionAt';
+        expressionAttributeValues[':actionBy'] = actionBy;
+        expressionAttributeValues[':now'] = timestamp;
+    } else if (status === 'PENDING_HR' || (status === 'PENDING_FINANCE' && !actionBy.toLowerCase().includes('finance'))) {
+        // Manager Action
         updateExpression.push('#managerActionBy = :actionBy', '#managerActionAt = :now');
         expressionAttributeNames['#managerActionBy'] = 'managerActionBy';
         expressionAttributeNames['#managerActionAt'] = 'managerActionAt';
         expressionAttributeValues[':actionBy'] = actionBy;
         expressionAttributeValues[':now'] = timestamp;
-    }
-
-    // If it's an HR Action (Final Approval or Rejection by HR)
-    if (status === 'APPROVED' || (status === 'REJECTED' && !expressionAttributeNames['#managerActionBy'])) {
-        // Note: If Manager rejected, we already set managerActionBy. 
-        // If HR rejects, we set hrActionBy. 
-        // Simple heuristic: If status is APPROVED, it's HR.
+    } else if (status === 'APPROVED') {
         updateExpression.push('#hrActionBy = :actionBy', '#hrActionAt = :now');
         expressionAttributeNames['#hrActionBy'] = 'hrActionBy';
         expressionAttributeNames['#hrActionAt'] = 'hrActionAt';
@@ -146,6 +169,32 @@ async function updateRequestStatus(requestId, status, actionBy, rejectionReason 
 
     const response = await docClient.send(command);
     return response.Attributes;
+}
+
+/**
+ * Check if employee has any pending or approved advance requests that are not fully closed
+ */
+async function hasPendingAdvance(employeeId) {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'employeeId = :empId AND #type = :type AND #status IN (:s1, :s2, :s3, :s4, :s5)',
+        ExpressionAttributeNames: {
+            '#type': 'type',
+            '#status': 'status'
+        },
+        ExpressionAttributeValues: {
+            ':empId': employeeId,
+            ':type': 'ADVANCE',
+            ':s1': 'APPROVED', // Assuming APPROVED means not yet fully repaid
+            ':s2': 'PENDING_FINANCE',
+            ':s3': 'PENDING_SUPER_ADMIN',
+            ':s4': 'PENDING_HR',
+            ':s5': 'PENDING_MANAGER'
+        }
+    });
+
+    const response = await docClient.send(command);
+    return response.Items && response.Items.length > 0;
 }
 
 /**
@@ -291,5 +340,6 @@ module.exports = {
     getApprovedPermissions,
     getApprovedRequestsByDate,
     getApprovedRequestsByDateRange,
-    getRequestsByDateRange
+    getRequestsByDateRange,
+    hasPendingAdvance
 };
