@@ -60,13 +60,33 @@ router.get('/calculate/:employeeId', async (req, res) => {
 
         const approvedAdvances = allRequests.filter(req => {
             if (req.type !== 'ADVANCE' || req.status !== 'APPROVED') return false;
-            // Assuming advance is deduced in the month it was requested/approved
+
             const reqDate = new Date(req.createdAt);
-            return reqDate.getMonth() + 1 === currentMonth && reqDate.getFullYear() === currentYear;
+            const emiMonths = parseInt(req.data.emiMonths) || 1;
+            const amount = parseFloat(req.data.amount) || 0;
+
+            // Calculate month difference between requested date and calculation date
+            const monthDiff = (currentYear - reqDate.getFullYear()) * 12 + (currentMonth - (reqDate.getMonth() + 1));
+
+            // Repayment starts from the NEXT month
+            // monthDiff 0: Month of request/approval (Skip)
+            // monthDiff 1 to emiMonths: Repayment months
+            return monthDiff >= 1 && monthDiff <= emiMonths;
         });
 
-        const totalAdvance = approvedAdvances.reduce((sum, req) => {
-            return sum + (parseFloat(req.data.amount) || 0);
+        const totalAdvanceDeduction = approvedAdvances.reduce((sum, req) => {
+            const amount = parseFloat(req.data.amount) || 0;
+            const emiMonths = parseInt(req.data.emiMonths) || 1;
+            const installment = Math.ceil(amount / emiMonths);
+
+            const reqDate = new Date(req.createdAt);
+            const monthDiff = (currentYear - reqDate.getFullYear()) * 12 + (currentMonth - (reqDate.getMonth() + 1));
+
+            // If it's the last month, handle the remainder
+            if (monthDiff === emiMonths) {
+                return sum + (amount - (installment * (emiMonths - 1)));
+            }
+            return sum + installment;
         }, 0);
 
         // Standard PF Calculation (12% of basic if eligible)
@@ -94,9 +114,9 @@ router.get('/calculate/:employeeId', async (req, res) => {
                 esi: employee.esiContribution || 0,
                 pt: 0,
                 tds: 0,
-                advance: totalAdvance
+                advance: totalAdvanceDeduction
             },
-            totalAdvance,
+            totalAdvance: totalAdvanceDeduction,
             pfDeduction,
             advanceRequests: approvedAdvances
         });
