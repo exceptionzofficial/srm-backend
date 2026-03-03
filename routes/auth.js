@@ -145,8 +145,8 @@ router.post('/status', async (req, res) => {
         res.json({
             success: true,
             registered: true,
-            hasPassword: !!employee.password,
-            employeeName: employee.name
+            hasPassword: !!user.password,
+            employeeName: user.name
         });
     } catch (error) {
         console.error(error);
