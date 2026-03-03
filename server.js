@@ -61,6 +61,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/dashboard', require('./routes/dashboard')); // Dashboard Stats
 app.use('/api/pay-groups', require('./routes/payGroups'));
 app.use('/api/travel', require('./routes/travel'));
+app.use('/api/clusters', require('./routes/clusters'));
 
 // Health check
 app.get('/api/health', (req, res) => {

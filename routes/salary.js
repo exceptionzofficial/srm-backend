@@ -61,9 +61,11 @@ router.get('/calculate/:employeeId', async (req, res) => {
         const approvedAdvances = allRequests.filter(req => {
             if (req.type !== 'ADVANCE' || req.status !== 'APPROVED') return false;
 
-            const reqDate = new Date(req.createdAt);
-            const emiMonths = parseInt(req.data.emiMonths) || 1;
-            const amount = parseFloat(req.data.amount) || 0;
+            const reqDate = new Date(req.updatedAt || req.createdAt);
+            const emiMonths = parseInt(req.data?.emiMonths) || 0;
+            const amount = parseFloat(req.data?.amount) || 0;
+
+            if (emiMonths <= 0 || amount <= 0) return false;
 
             // Calculate month difference between requested date and calculation date
             const monthDiff = (currentYear - reqDate.getFullYear()) * 12 + (currentMonth - (reqDate.getMonth() + 1));
@@ -75,11 +77,11 @@ router.get('/calculate/:employeeId', async (req, res) => {
         });
 
         const totalAdvanceDeduction = approvedAdvances.reduce((sum, req) => {
-            const amount = parseFloat(req.data.amount) || 0;
-            const emiMonths = parseInt(req.data.emiMonths) || 1;
+            const amount = parseFloat(req.data?.amount) || 0;
+            const emiMonths = parseInt(req.data?.emiMonths) || 1;
             const installment = Math.ceil(amount / emiMonths);
 
-            const reqDate = new Date(req.createdAt);
+            const reqDate = new Date(req.updatedAt || req.createdAt);
             const monthDiff = (currentYear - reqDate.getFullYear()) * 12 + (currentMonth - (reqDate.getMonth() + 1));
 
             // If it's the last month, handle the remainder
