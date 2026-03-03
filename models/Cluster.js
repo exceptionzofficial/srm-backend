@@ -43,6 +43,7 @@ async function createCluster(clusterData) {
         clusterId: uuidv4(),
         name: clusterData.name,
         branchIds: clusterData.branchIds || [], // Array of branch IDs assigned to this cluster
+        managerId: clusterData.managerId || null, // Manager assigned to this cluster
         isActive: clusterData.isActive !== false,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -96,10 +97,27 @@ async function deleteCluster(clusterId) {
     return { success: true };
 }
 
+/**
+ * Get clusters assigned to a specific manager
+ */
+async function getClustersByManager(managerId) {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'managerId = :mid',
+        ExpressionAttributeValues: {
+            ':mid': managerId,
+        },
+    });
+
+    const response = await docClient.send(command);
+    return response.Items || [];
+}
+
 module.exports = {
     getAllClusters,
     getClusterById,
     createCluster,
     updateCluster,
     deleteCluster,
+    getClustersByManager,
 };

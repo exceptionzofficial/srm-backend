@@ -17,6 +17,17 @@ router.get('/', async (req, res) => {
     }
 });
 
+// GET clusters by manager ID
+router.get('/manager/:managerId', async (req, res) => {
+    try {
+        const clusters = await Cluster.getClustersByManager(req.params.managerId);
+        res.json({ success: true, clusters });
+    } catch (error) {
+        console.error('Error fetching clusters by manager:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // GET cluster by ID
 router.get('/:id', async (req, res) => {
     try {
