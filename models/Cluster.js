@@ -113,6 +113,54 @@ async function getClustersByManager(managerId) {
     return response.Items || [];
 }
 
+/**
+ * Get cluster details including assigned managers and branch requests
+ */
+async function getClusterDetails(clusterId) {
+    const cluster = await getClusterById(clusterId);
+    if (!cluster) return null;
+
+    const branchIds = cluster.branchIds || [];
+    if (branchIds.length === 0) {
+        return {
+            ...cluster,
+            assignedManagers: [],
+            branchRequests: []
+        };
+    }
+
+    // Fetch all managers and filter by branchId
+    const Manager = require('./Manager');
+    const allManagers = await Manager.getAllManagers();
+    const assignedManagers = allManagers.filter(m => branchIds.includes(m.branchId));
+
+    // Fetch all requests and filter by branchId
+    const Request = require('./Request');
+    const allRequests = await Request.getAllRequests();
+
+    // We need to fetch employee details for each request to get their branchId
+    // Optimization: In a real High-Volume DB logic, we would use a more efficient query.
+    // However, following the pattern in RequestController, we filter by employee's branch.
+    const Employee = require('./Employee');
+    const branchRequests = await Promise.all(allRequests.map(async (req) => {
+        const employee = await Employee.getEmployeeById(req.employeeId);
+        if (employee && branchIds.includes(employee.branchId)) {
+            return {
+                ...req,
+                employeeName: employee.name || `${employee.firstName} ${employee.lastName}`,
+                branchId: employee.branchId
+            };
+        }
+        return null;
+    }));
+
+    return {
+        ...cluster,
+        assignedManagers,
+        branchRequests: branchRequests.filter(r => r !== null)
+    };
+}
+
 module.exports = {
     getAllClusters,
     getClusterById,
@@ -120,4 +168,5 @@ module.exports = {
     updateCluster,
     deleteCluster,
     getClustersByManager,
+    getClusterDetails,
 };

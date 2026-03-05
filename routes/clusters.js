@@ -75,4 +75,18 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
+// GET cluster details (managers and requests)
+router.get('/:id/details', async (req, res) => {
+    try {
+        const cluster = await Cluster.getClusterDetails(req.params.id);
+        if (!cluster) {
+            return res.status(404).json({ success: false, message: 'Cluster not found' });
+        }
+        res.json({ success: true, cluster });
+    } catch (error) {
+        console.error('Error fetching cluster details:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 module.exports = router;
