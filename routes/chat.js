@@ -120,7 +120,27 @@ router.post('/groups', async (req, res) => {
 router.get('/groups/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        const groups = await Chat.getUserGroups(userId);
+
+        // Check user role first
+        const Manager = require('../models/Manager');
+        const manager = await Manager.getManagerById(userId);
+
+        let groups;
+        if (manager && (manager.role === 'CLUSTER_MANAGER' || manager.role === 'MD' || manager.role === 'ADMIN')) {
+            // Fetch all groups for administrative roles
+            const snapshot = await db.collection('chat_groups')
+                .orderBy('updatedAt', 'desc')
+                .get();
+
+            groups = [];
+            snapshot.forEach(doc => {
+                groups.push(doc.data());
+            });
+        } else {
+            // Standard user, fetch groups they are a member of
+            groups = await Chat.getUserGroups(userId);
+        }
+
         res.json({
             success: true,
             data: groups
