@@ -537,6 +537,7 @@ router.get('/report', async (req, res) => {
                     name: employee.name,
                     department: employee.department,
                     designation: employee.designation,
+                    branchId: employee.branchId,
                     stats,
                     dailyBreakdown
                 };
@@ -592,6 +593,7 @@ router.get('/report', async (req, res) => {
                     name: employee.name,
                     department: employee.department,
                     designation: employee.designation,
+                    branchId: employee.branchId,
                     ...statusResult
                 };
             }));
