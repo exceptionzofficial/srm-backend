@@ -238,10 +238,8 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
         // Validate Branch
         const requestBranchId = req.body.branchId;
         if (requestBranchId && employee.branchId && employee.branchId !== requestBranchId) {
-            return res.status(403).json({
-                success: false,
-                message: `You belong to a different branch. Please select the correct branch.`,
-            });
+            // [Modified] Allow check-in at different branches. Just log the mismatch for audit.
+            console.log(`[Check-in] Branch mismatch for ${employeeId}: Assigned=${employee.branchId}, Requested=${requestBranchId}. Multi-branch check-in allowed.`);
         }
 
         // Upload check-in photo to S3 (Audit Trail)
