@@ -340,6 +340,30 @@ router.get('/work-summary/:employeeId', async (req, res) => {
     }
 });
 
+/**
+ * GET /branch-work-summary/:employeeId - Get chronological branch visit summary
+ */
+router.get('/branch-work-summary/:employeeId', async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+        const { date } = req.query;
+
+        const targetDate = date || new Date().toISOString().split('T')[0];
+        const summary = await LocationPing.getDetailedBranchSummary(employeeId, targetDate);
+
+        res.json({
+            success: true,
+            summary,
+        });
+    } catch (error) {
+        console.error('Error getting branch work summary:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting branch work summary',
+        });
+    }
+});
+
 // Validate if location is within geo-fence (checks all active branches)
 router.post('/validate', async (req, res) => {
     try {

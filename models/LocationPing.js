@@ -160,6 +160,60 @@ async function getWorkSummary(employeeId, date) {
     };
 }
 
+/**
+ * Get chronological list of branch visits and their durations
+ */
+async function getDetailedBranchSummary(employeeId, date) {
+    const pings = await getPingsForDate(employeeId, date);
+    if (!pings.length) return [];
+
+    const Branch = require('./Branch');
+    const branches = await Branch.getAllBranches();
+    const branchMap = {};
+    branches.forEach(b => branchMap[b.branchId] = b.name);
+
+    const summary = [];
+    let currentSession = null;
+
+    pings.forEach((ping) => {
+        const branchId = ping.branchId;
+        const isInside = ping.isInsideGeofence;
+
+        if (isInside && branchId) {
+            if (!currentSession || currentSession.branchId !== branchId) {
+                currentSession = {
+                    branchId,
+                    branchName: branchMap[branchId] || 'Unknown Branch',
+                    startTime: ping.timestamp,
+                    endTime: ping.timestamp,
+                    count: 1
+                };
+                summary.push(currentSession);
+            } else {
+                currentSession.endTime = ping.timestamp;
+                currentSession.count += 1;
+            }
+        } else {
+            currentSession = null;
+        }
+    });
+
+    return summary.map(s => {
+        const start = new Date(s.startTime);
+        const end = new Date(s.endTime);
+        return {
+            branchId: s.branchId,
+            branchName: s.branchName,
+            startTime: start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            endTime: end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            durationMinutes: s.count,
+            formattedDuration: s.count >= 60 
+                ? `${Math.floor(s.count / 60)}h ${s.count % 60}m`
+                : `${s.count} mins`
+        };
+    });
+}
+
 module.exports = {
     savePing,
     getLatestPing,
@@ -167,4 +221,5 @@ module.exports = {
     getAllLatestPings,
     calculateWorkMinutes,
     getWorkSummary,
+    getDetailedBranchSummary,
 };

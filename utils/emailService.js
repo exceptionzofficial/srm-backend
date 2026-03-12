@@ -148,26 +148,26 @@ async function sendWelcomeEmail({ email, name, employeeId, password, role }) {
                             
                             <p class="welcome-text">Dear <strong>${name}</strong>,</p>
                             
-                            <p class="welcome-text">We are thrilled to enable your manager account. You can now access the <strong>SRM Portal</strong> to oversee your branch operations and team performance.</p>
-                            
-                            <div class="details-box">
-                                <div class="label">Assigned Role</div>
-                                <div class="value">${role.replace('_', ' ')}</div>
-                                
-                                <div class="label">Username / Employee ID</div>
-                                <div class="value">${employeeId}</div>
-                                
-                                <div class="label">Temporary Password</div>
-                                <div class="value" style="border:none; padding:0; margin:0;"><span class="password-box">${password}</span></div>
-                            </div>
-                            
-                            <p class="welcome-text" style="text-align: center; margin-bottom: 30px;">
-                                Please log in immediately and change your password.
-                            </p>
-                            
-                            <div style="text-align: center; margin-bottom: 20px;">
-                                <a href="${process.env.FRONTEND_URL || 'https://srm-sweets-admin.web.app'}" class="btn-login">Access Portal</a>
-                            </div>
+                             <p class="welcome-text">We are thrilled to welcome you to the team. You can now access the <strong>SRM Platform</strong> to manage your attendance, requests, and work details.</p>
+                             
+                             <div class="details-box">
+                                 <div class="label">Assigned Role</div>
+                                 <div class="value">${role.replace(/_/g, ' ')}</div>
+                                 
+                                 <div class="label">Username / Employee ID</div>
+                                 <div class="value">${employeeId}</div>
+                                 
+                                 <div class="label">Temporary Password</div>
+                                 <div class="value" style="border:none; padding:0; margin:0;"><span class="password-box">${password}</span></div>
+                             </div>
+                             
+                             <p class="welcome-text" style="text-align: center; margin-bottom: 30px;">
+                                 Please log in to the app or portal and change your password.
+                             </p>
+                             
+                             <div style="text-align: center; margin-bottom: 20px;">
+                                 <a href="${process.env.FRONTEND_URL || 'https://srm-sweets-admin.web.app'}" class="btn-login">Login to Account</a>
+                             </div>
 
                              <p style="margin-top: 40px; color: #9ca3af; font-size: 14px; text-align: center;">Best Regards,<br/><strong>SRM Admin Team</strong></p>
                         </div>

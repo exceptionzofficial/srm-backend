@@ -250,11 +250,11 @@ router.post('/', cpUpload, async (req, res) => {
             if (isManager) employeeData.managerId = employeeId;
         }
 
-        // Auto-generate password for Managers
-        if (isManager && !employeeData.password) {
+        // Auto-generate password for ALL employees if not provided
+        if (!employeeData.password) {
             const randomPass = Math.random().toString(36).slice(-8);
             employeeData.password = randomPass;
-            console.log(`[Create] Auto-generated password for Manager ${name} (${employeeData.role})`);
+            console.log(`[Create] Auto-generated password for ${name} (${employeeData.role || 'Employee'})`);
         }
 
         // Handle File Uploads
