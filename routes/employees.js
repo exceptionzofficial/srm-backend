@@ -83,11 +83,9 @@ router.post('/verify-id', async (req, res) => {
         }
 
         // Verify Branch (if provided)
+        // [Modified] Relaxed for Multiple Branch support: We no longer block if branch mismatch
         if (branchId && employee.branchId && employee.branchId !== branchId) {
-            return res.status(403).json({
-                success: false,
-                message: 'Employee not found in this branch.',
-            });
+            console.log(`[VerifyID] Branch mismatch for ${employeeId}: Assigned=${employee.branchId}, Requested=${branchId}. Proceeding anyway.`);
         }
 
         // Check if face is already registered

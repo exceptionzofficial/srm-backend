@@ -89,16 +89,29 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             // If authorized, we SKIP geofence check
         } else if (type === 'KIOSK') {
             console.log(`[Check-in] KIOSK mode detected for ${employeeId}. Skipping GeoFence.`);
-        } else {
             // OFFICE MODE - Enforce Geofence
 
-            // Determine Target Location (Branch vs Global)
+            // Determine Target Location (Requested Branch vs Assigned Branch vs Global)
             let targetLat, targetLng, targetRadius;
             let isConfigured = false;
             let checkSource = 'GLOBAL';
 
-            // 1. Check Employee's Assigned Branch (TOP PRIORITY)
-            if (employee.branchId) {
+            // 1. Check Request Body Branch (User selected in App - TOP PRIORITY for multi-branch)
+            const requestBranchId = req.body.branchId;
+            if (requestBranchId) {
+                const branch = await Branch.getBranchById(requestBranchId);
+                if (branch && branch.latitude && branch.longitude) {
+                    targetLat = branch.latitude;
+                    targetLng = branch.longitude;
+                    targetRadius = branch.radiusMeters || 100;
+                    isConfigured = true;
+                    checkSource = `SELECTED_BRANCH: ${branch.name}`;
+                    console.log(`[Check-in] Using SELECTED branch: ${branch.name} (${requestBranchId})`);
+                }
+            }
+
+            // 2. Fallback to Employee's Assigned Branch (If no branch selected in request)
+            if (!isConfigured && employee.branchId) {
                 const branch = await Branch.getBranchById(employee.branchId);
                 if (branch && branch.latitude && branch.longitude) {
                     targetLat = branch.latitude;
@@ -106,21 +119,6 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
                     targetRadius = branch.radiusMeters || 100;
                     isConfigured = true;
                     checkSource = `ASSIGNED_BRANCH: ${branch.name}`;
-                }
-            }
-
-            // 2. Fallback to Request Body Branch (User selected in App)
-            if (!isConfigured) {
-                const requestBranchId = req.body.branchId;
-                if (requestBranchId) {
-                    const branch = await Branch.getBranchById(requestBranchId);
-                    if (branch && branch.latitude && branch.longitude) {
-                        targetLat = branch.latitude;
-                        targetLng = branch.longitude;
-                        targetRadius = branch.radiusMeters || 100;
-                        isConfigured = true;
-                        checkSource = `Selected_BRANCH: ${branch.name}`;
-                    }
                 }
             }
 
@@ -562,8 +560,25 @@ router.get('/report', async (req, res) => {
             const report = await Promise.all(employees.map(async (employee) => {
                 const empAttendance = attendanceRecords.filter(r => r.employeeId === employee.employeeId);
                 let effectiveAttendance = null;
+                let totalWorkMinutes = 0;
+                let visitedBranches = [];
+
                 if (empAttendance.length > 0) {
                     empAttendance.sort((a, b) => new Date(a.checkInTime) - new Date(b.checkInTime));
+                    
+                    // Sum durations for all sessions
+                    empAttendance.forEach(session => {
+                        if (session.checkInTime) {
+                            const start = new Date(session.checkInTime);
+                            const end = session.checkOutTime ? new Date(session.checkOutTime) : new Date(date + 'T' + settings.workEndTime + ':00Z'); // Fallback to end of shift if not out
+                            const diff = (end - start) / (1000 * 60);
+                            if (diff > 0) totalWorkMinutes += diff;
+                        }
+                        if (session.branchId) visitedBranches.push(session.branchId);
+                    });
+
+                    // For the legacy 'effectiveAttendance' used in status calculation:
+                    // Use the first in and last out
                     const lastRecord = empAttendance[empAttendance.length - 1];
                     effectiveAttendance = {
                         checkInTime: empAttendance[0].checkInTime,
@@ -594,6 +609,8 @@ router.get('/report', async (req, res) => {
                     department: employee.department,
                     designation: employee.designation,
                     branchId: employee.branchId,
+                    visitedBranches: [...new Set(visitedBranches)],
+                    totalWorkMinutes: Math.round(totalWorkMinutes + statusResult.travelMinutes), // statusResult handles travel
                     ...statusResult
                 };
             }));
