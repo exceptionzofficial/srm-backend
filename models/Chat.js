@@ -11,11 +11,15 @@ async function createGroup(groupData) {
     const groupId = groupData.id || uuidv4();
     const timestamp = admin.firestore.FieldValue.serverTimestamp();
 
-    // Ensure admin is in members
+    // Ensure admins are in members
     const members = groupData.members || [];
-    if (!members.includes('hr-admin-1')) {
-        members.push('hr-admin-1');
-    }
+    const ADMIN_IDS = ['admin-1', 'hr-admin-1'];
+    
+    ADMIN_IDS.forEach(id => {
+        if (!members.includes(id)) {
+            members.push(id);
+        }
+    });
 
     const groupRef = db.collection(COLLECTION_GROUPS).doc(groupId);
 

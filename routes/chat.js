@@ -125,8 +125,11 @@ router.get('/groups/:userId', async (req, res) => {
         const Manager = require('../models/Manager');
         const manager = await Manager.getManagerById(userId);
 
+        // Define administrative user IDs
+        const ADMIN_IDS = ['admin-1', 'hr-admin-1'];
+
         let groups;
-        if (manager && (manager.role === 'CLUSTER_MANAGER' || manager.role === 'MD' || manager.role === 'ADMIN')) {
+        if (ADMIN_IDS.includes(userId) || (manager && (manager.role === 'CLUSTER_MANAGER' || manager.role === 'MD' || manager.role === 'ADMIN'))) {
             // Fetch all groups for administrative roles
             const snapshot = await db.collection('chat_groups')
                 .orderBy('updatedAt', 'desc')
