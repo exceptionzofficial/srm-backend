@@ -11,8 +11,9 @@ router.post('/register/initiate', async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
-        const employee = await Employee.getEmployeeByEmail(email);
-        const manager = await Manager.getManagerByEmail(email);
+        const cleanEmail = email.trim().toLowerCase();
+        const employee = await Employee.getEmployeeByEmail(cleanEmail);
+        const manager = await Manager.getManagerByEmail(cleanEmail);
 
         const user = employee || manager;
 

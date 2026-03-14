@@ -203,6 +203,8 @@ router.post('/', cpUpload, async (req, res) => {
     try {
         let employeeData = parseJsonFields(req.body);
         let { employeeId, name, email } = employeeData;
+        if (email) email = email.trim().toLowerCase();
+        if (employeeData.email) employeeData.email = employeeData.email.trim().toLowerCase();
 
         if (!name) {
             return res.status(400).json({
