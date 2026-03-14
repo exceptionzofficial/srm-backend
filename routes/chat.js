@@ -129,7 +129,16 @@ router.get('/groups/:userId', async (req, res) => {
         const ADMIN_IDS = ['admin-1', 'hr-admin-1'];
 
         let groups;
-        if (ADMIN_IDS.includes(userId) || (manager && (manager.role === 'CLUSTER_MANAGER' || manager.role === 'MD' || manager.role === 'ADMIN'))) {
+        // Check if user is a designated admin ID, OR if they are a manager with an admin-level role
+        const isAdminRole = manager && (
+            manager.role === 'CLUSTER_MANAGER' || 
+            manager.role === 'MD' || 
+            manager.role === 'ADMIN' || 
+            manager.role === 'SUPER_ADMIN' ||
+            manager.role.includes('ADMIN')
+        );
+
+        if (ADMIN_IDS.includes(userId) || isAdminRole) {
             // Fetch all groups for administrative roles
             const snapshot = await db.collection('chat_groups')
                 .orderBy('updatedAt', 'desc')
