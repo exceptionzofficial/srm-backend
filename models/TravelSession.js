@@ -231,6 +231,25 @@ async function getAllActiveTravelSessions() {
     return response.Items || [];
 }
 
+/**
+ * Get Travel Sessions for an employee on a specific date
+ */
+async function getSessionsByEmployeeAndDate(employeeId, date) {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'employeeId = :empId',
+        ExpressionAttributeValues: {
+            ':empId': employeeId
+        },
+    });
+
+    const response = await docClient.send(command);
+    const items = response.Items || [];
+
+    // Filter by date locally (startTime is ISO string)
+    return items.filter(item => item.startTime && item.startTime.startsWith(date));
+}
+
 module.exports = {
     startTravelSession,
     endTravelSession,
@@ -238,5 +257,6 @@ module.exports = {
     getAllActiveTravelSessions,
     getTravelSessionById,
     getTravelSessionsByDateRange,
+    getSessionsByEmployeeAndDate,
     addPing
 };
