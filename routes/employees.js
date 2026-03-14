@@ -305,24 +305,25 @@ router.post('/', cpUpload, async (req, res) => {
             const { clearVerification } = require('../utils/otpService');
             await clearVerification(email);
 
-            // Send Welcome Email with Credentials if password was provided (Manager creation)
-            console.log(`[CreateEmployee] Checking for password to send welcome email. Password present: ${!!employeeData.password}`);
+            // Send Welcome Email with Credentials if password was provided (or auto-generated)
             if (employeeData.password) {
-                console.log('[CreateEmployee] Password found, triggering sendWelcomeEmail...');
-                console.log(`[CreateEmployee] Email details - Email: ${email}, Name: ${name}, Role: ${employeeData.role}`);
                 const { sendWelcomeEmail } = require('../utils/emailService');
-
-                // Send async, don't await strictly to safely return response
-                sendWelcomeEmail({
-                    email,
-                    name,
-                    employeeId,
-                    password: employeeData.password,
-                    role: employeeData.role || 'Employee'
-                })
-                    .then(result => console.log('[CreateEmployee] sendWelcomeEmail result:', result))
-                    .catch(err => console.error('[CreateEmployee] Failed to send welcome email:', err));
-            } else {
+                console.log(`[CreateEmployee] Triggering welcome email to ${email}...`);
+                
+                try {
+                    const emailResult = await sendWelcomeEmail({
+                        email,
+                        name,
+                        employeeId,
+                        password: employeeData.password,
+                        role: employeeData.role || 'Employee'
+                    });
+                    console.log('[CreateEmployee] Welcome email delivery result:', emailResult);
+                } catch (emailErr) {
+                    console.error('[CreateEmployee] Critical error sending welcome email:', emailErr);
+                }
+            }
+ else {
                 console.log('[CreateEmployee] No password provided, skipping welcome email.');
             }
         } else {
