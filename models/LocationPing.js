@@ -165,8 +165,6 @@ async function getWorkSummary(employeeId, date) {
  */
 async function getDetailedBranchSummary(employeeId, date) {
     const pings = await getPingsForDate(employeeId, date);
-    if (!pings.length) return [];
-
     const Branch = require('./Branch');
     const TravelSession = require('./TravelSession');
     const branches = await Branch.getAllBranches();
