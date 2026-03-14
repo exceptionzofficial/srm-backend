@@ -29,6 +29,8 @@ async function createAttendance(attendanceData) {
         checkOutTime: null,
         checkInLat: attendanceData.latitude,
         checkInLng: attendanceData.longitude,
+        branchId: attendanceData.branchId || null, // Store branch ID
+        type: attendanceData.type || 'OFFICE', // Store type (OFFICE, TRAVEL, KIOSK)
         verificationMethod: 'face_recognition',
         checkInImageUrl: attendanceData.checkInImageUrl || null,
         status: status,

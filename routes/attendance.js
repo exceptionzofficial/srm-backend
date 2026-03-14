@@ -257,6 +257,7 @@ router.post('/check-in', upload.single('image'), async (req, res) => {
             employeeId,
             latitude: parseFloat(latitude),
             longitude: parseFloat(longitude),
+            branchId: requestBranchId, // Pass branch ID
             type, // Store OFFICE or TRAVEL
             checkInImageUrl,
         });
@@ -1136,16 +1137,75 @@ router.get('/status/:employeeId', async (req, res) => {
                 travelDurationMinutes: Math.round(travelDurationMinutes),
                 totalWorkDurationMinutes: Math.round(totalWorkDurationMinutes),
 
-                openSession: openSession ? {
-                    attendanceId: openSession.attendanceId,
-                    checkInTime: openSession.checkInTime,
-                    date: openSession.date,
-                } : null,
-                todayAttendance: todayAttendance ? {
-                    attendanceId: todayAttendance.attendanceId,
-                    checkInTime: todayAttendance.checkInTime,
-                    checkOutTime: todayAttendance.checkOutTime,
-                } : null,
+        // --- BRANCH INFO AUGMENTATION ---
+        const enrichSession = async (session) => {
+            if (!session) return null;
+            const enriched = {
+                attendanceId: session.attendanceId,
+                checkInTime: session.checkInTime,
+                checkOutTime: session.checkOutTime || null,
+                date: session.date,
+                branchId: session.branchId || null,
+                branchName: 'Branch' // Fallback
+            };
+
+            if (session.branchId) {
+                const branch = await Branch.getBranchById(session.branchId);
+                if (branch) enriched.branchName = branch.name || branch.branchName;
+            } else if (employee.branchId) {
+                // Fallback to assigned branch if record doesn't have one (old records)
+                const branch = await Branch.getBranchById(employee.branchId);
+                if (branch) enriched.branchName = branch.name || branch.branchName;
+            }
+            return enriched;
+        };
+
+        const enrichedOpenSession = await enrichSession(openSession);
+        const enrichedTodayAttendance = await enrichSession(todayAttendance);
+
+        res.json({
+            success: true,
+            employee: {
+                employeeId: employee.employeeId,
+                name: employee.name,
+                department: employee.department,
+                designation: employee.designation,
+                branchId: employee.branchId,
+                faceId: employee.faceId,
+                isTracking: isTracking,
+                // Documents
+                panNumber: employee.panNumber,
+                aadharNumber: employee.aadharNumber,
+                photoUrl: employee.photoUrl,
+                // Statutory
+                uan: employee.uan,
+                esicIP: employee.esicIP,
+                // Bank
+                bankAccount: employee.bankAccount,
+                ifscCode: employee.ifscCode,
+                paymentMode: employee.paymentMode,
+                joinedDate: employee.joinedDate,
+                fixedSalary: employee.fixedSalary || 0
+            },
+            status: {
+                isTracking: isTracking,
+                autoCheckedOut: autoCheckedOut,
+                canResume: canResume,
+                hasCheckedInToday: !!todayAttendance,
+                hasCheckedOutToday: !!(todayAttendance?.checkOutTime),
+                hasOpenSession: !!openSession, // Any incomplete session regardless of date
+                canCheckIn: !isTracking && !canResume && !openSession,
+                canCheckOut: isTracking || canResume || !!openSession, // Can checkout if any open session
+                attendanceRecords: allTodaySessions, // Return full list
+
+                // Duration Info
+                attendanceDurationMinutes: Math.round(attendanceDurationMinutes),
+                permissionDurationMinutes: Math.round(permissionDurationMinutes),
+                travelDurationMinutes: Math.round(travelDurationMinutes),
+                totalWorkDurationMinutes: Math.round(totalWorkDurationMinutes),
+
+                openSession: enrichedOpenSession,
+                todayAttendance: enrichedTodayAttendance,
             },
         });
     } catch (error) {
