@@ -57,64 +57,9 @@ router.post('/register', upload.single('image'), async (req, res) => {
             });
         }
 
-        // Check geo-fence
-        let targetLat, targetLng, targetRadius;
-        let isConfigured = false;
-
-        // 1. Try to get Employee's Branch
-        if (employee.branchId) {
-            const branch = await Branch.getBranchById(employee.branchId);
-            if (branch && branch.latitude && branch.longitude) {
-                targetLat = branch.latitude;
-                targetLng = branch.longitude;
-                targetRadius = branch.radiusMeters || 100;
-                isConfigured = true;
-                console.log(`[Face Register] Validating against Branch: ${branch.name}`);
-            }
-        }
-
-        // 2. Fallback to Global Settings
-        if (!isConfigured) {
-            const globalSettings = await getGeofenceSettings();
-            if (globalSettings.isConfigured) {
-                targetLat = globalSettings.officeLat;
-                targetLng = globalSettings.officeLng;
-                targetRadius = globalSettings.radiusMeters;
-                isConfigured = true;
-                console.log('[Face Register] Validating against Global Office');
-            }
-        }
-
-        console.log('--- Geofence Debug (Register) ---');
-        console.log('User Location:', { latitude, longitude });
-        console.log('Target:', { targetLat, targetLng, targetRadius });
-
+        // Fetch location if provided, but don't enforce geofence for registration
         const isKiosk = req.body.isKiosk === true || req.body.isKiosk === 'true';
-        if (isConfigured && !isKiosk) {
-            const locationCheck = isWithinGeofence(
-                parseFloat(latitude),
-                parseFloat(longitude),
-                targetLat,
-                targetLng,
-                targetRadius
-            );
-
-            console.log('Check Result:', locationCheck);
-
-            if (!locationCheck.isWithin) {
-                console.log('❌ Geofence Failed');
-                return res.status(403).json({
-                    success: false,
-                    message: `Unable to register: You are too far from the office! Distance: ${locationCheck.distance}m (Allowed: ${locationCheck.allowedRadius}m)`,
-                    distance: locationCheck.distance,
-                    allowedRadius: locationCheck.allowedRadius,
-                    withinRange: false,
-                });
-            }
-            console.log('✅ Geofence Passed');
-        } else {
-            console.log('⚠️ Geofence NOT Configured - Skipping check');
-        }
+        console.log(`[Face Register] Processing registration for ${employeeId}${isKiosk ? ' (Kiosk)' : ''}`);
 
         // Get image buffer
         let imageBuffer;
