@@ -168,13 +168,17 @@ async function getDetailedBranchSummary(employeeId, date) {
     if (!pings.length) return [];
 
     const Branch = require('./Branch');
+    const TravelSession = require('./TravelSession');
     const branches = await Branch.getAllBranches();
     const branchMap = {};
     branches.forEach(b => branchMap[b.branchId] = b.name);
 
+    const travelSessions = await TravelSession.getSessionsByEmployeeAndDate(employeeId, date);
+    
     const summary = [];
     let currentSession = null;
 
+    // Process pings for branch visits
     pings.forEach((ping) => {
         const branchId = ping.branchId;
         const isInside = ping.isInsideGeofence;
@@ -182,6 +186,7 @@ async function getDetailedBranchSummary(employeeId, date) {
         if (isInside && branchId) {
             if (!currentSession || currentSession.branchId !== branchId) {
                 currentSession = {
+                    type: 'BRANCH',
                     branchId,
                     branchName: branchMap[branchId] || 'Unknown Branch',
                     startTime: ping.timestamp,
@@ -198,18 +203,38 @@ async function getDetailedBranchSummary(employeeId, date) {
         }
     });
 
+    // Merge travel sessions
+    travelSessions.forEach(ts => {
+        summary.push({
+            type: 'TRAVEL',
+            branchName: `Travel to ${ts.destination || ts.requestId || 'Unknown'}`,
+            destination: ts.destination,
+            startTime: ts.startTime,
+            endTime: ts.endTime,
+            durationMinutes: ts.durationMinutes || 0,
+            status: ts.status
+        });
+    });
+
+    // Sort chronologically
+    summary.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
     return summary.map(s => {
         const start = new Date(s.startTime);
-        const end = new Date(s.endTime);
+        const end = s.endTime ? new Date(s.endTime) : null;
+        
+        let duration = s.durationMinutes || s.count || 0;
+        
+        // If end time exists but duration doesn't (for BRANCH), calculate it
+        if (!duration && end) {
+            duration = Math.round((end - start) / (1000 * 60));
+        }
+
         return {
-            branchId: s.branchId,
-            branchName: s.branchName,
-            startTime: s.startTime,
-            endTime: s.endTime,
-            durationMinutes: s.count,
-            formattedDuration: s.count >= 60 
-                ? `${Math.floor(s.count / 60)}h ${s.count % 60}m`
-                : `${s.count} mins`
+            ...s,
+            formattedDuration: duration >= 60 
+                ? `${Math.floor(duration / 60)}h ${duration % 60}m`
+                : `${duration} mins`
         };
     });
 }
