@@ -86,12 +86,13 @@ async function sendOTPEmail({ email, otp, employeeName = 'Employee' }) {
             `,
         };
 
+        console.log(`[EmailService] Attempting to send OTP email to: ${email}`);
         const info = await transporter.sendMail(mailOptions);
-        console.log('OTP email sent successfully:', info.messageId);
+        console.log(`[EmailService] OTP email sent successfully to ${email}. MessageID: ${info.messageId}`);
         return { success: true, messageId: info.messageId };
     } catch (error) {
-        console.error('Error sending OTP email:', error);
-        throw new Error('Failed to send OTP email');
+        console.error(`[EmailService] CRITICAL ERROR sending OTP email to ${email}:`, error);
+        throw new Error(`Failed to send OTP email: ${error.message}`);
     }
 }
 

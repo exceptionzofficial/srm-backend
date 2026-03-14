@@ -13,7 +13,7 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 router.post('/send', async (req, res) => {
     try {
-        const { email, employeeName } = req.body;
+        let { email, employeeName } = req.body;
 
         // Validate email
         if (!email) {
@@ -23,12 +23,17 @@ router.post('/send', async (req, res) => {
             });
         }
 
+        // Normalize email
+        email = email.trim().toLowerCase();
+
         if (!emailRegex.test(email)) {
             return res.status(400).json({
                 success: false,
                 message: 'Invalid email address format',
             });
         }
+
+        console.log(`[OTP] Request to send email OTP to: ${email} for ${employeeName || 'unknown'}`);
 
         // Generate OTP
         const otp = generateOTP();
@@ -37,12 +42,12 @@ router.post('/send', async (req, res) => {
         // Store OTP (with rate limiting check)
         const storeResult = await storeOTP(email, otp, expiryMinutes);
 
-        // Check if rate limited
+        // Check if rate limited or database error
         if (!storeResult.success) {
-            return res.status(429).json({
+            return res.status(storeResult.rateLimited ? 429 : 500).json({
                 success: false,
                 message: storeResult.message,
-                rateLimited: true,
+                rateLimited: storeResult.rateLimited,
                 retryAfter: storeResult.retryAfter
             });
         }
