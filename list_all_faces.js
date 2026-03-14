@@ -35,18 +35,10 @@ async function listAllFaces() {
         } while (paginationToken);
 
         console.log(`\n📊 Total Faces Indexed: ${totalFaces}`);
-        console.log('--- Breakdown by Employee ID ---');
-
-        const targetId = 'SRM004';
-        if (faceCounts[targetId]) {
-            console.log(`\n🚨 CRITICAL: SRM004 STILL EXISTS! FaceIds: ${faceCounts[targetId].join(', ')}`);
-        } else {
-            console.log(`\n✅ CONFIRMED: SRM004 is NOT in the collection.`);
-        }
-
-        // extended check for others if needed
         Object.keys(faceCounts).forEach(extId => {
-            if (extId === 'SRM005') {
+            const count = faceCounts[extId].length;
+            console.log(`${extId}: ${count} face(s)`);
+            if (count > 1) {
                 console.log(`   ⚠️ WARNING: Found ${extId} with FaceIds: ${faceCounts[extId].join(', ')}`);
             }
         });

@@ -202,9 +202,24 @@ const cpUpload = upload.fields([
 router.post('/', cpUpload, async (req, res) => {
     try {
         let employeeData = parseJsonFields(req.body);
-        let { employeeId, name, email } = employeeData;
-        if (email) email = email.trim().toLowerCase();
-        if (employeeData.email) employeeData.email = employeeData.email.trim().toLowerCase();
+        
+        // Extract email and name with fallbacks to handle both Mobile and HR Portal payloads
+        let email = employeeData.email || employeeData.personalEmail;
+        let name = employeeData.name;
+        
+        // Handle name if split into first/last (common in HR portal)
+        if (!name && employeeData.firstName) {
+            name = `${employeeData.firstName} ${employeeData.lastName || ''}`.trim();
+        }
+
+        if (email) {
+            email = email.trim().toLowerCase();
+            employeeData.email = email; // Sync back to data object
+        }
+
+        let employeeId = employeeData.employeeId;
+
+        console.log(`[CreateEmployee] Processing request for Name: ${name}, Email: ${email}, ID: ${employeeId || 'AUTO'}`);
 
         if (!name) {
             return res.status(400).json({
