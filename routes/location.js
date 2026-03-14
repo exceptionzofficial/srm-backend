@@ -245,12 +245,15 @@ router.get('/employees', async (req, res) => {
         // Combine employee data with location data
         const employeeLocations = employees.map(emp => {
             const ping = pingMap[emp.employeeId];
+            const activeSession = sessionMap[emp.employeeId];
+            const associatedRequest = activeSession ? requestIdMap[activeSession.requestId] : null;
 
             // Determine online status:
             // 1. If ping exists and is within 5 minutes, employee is online
             // 2. OR if employee is actively tracking (just checked in)
+            // 3. OR if employee has an active travel session
             const pingAge = ping ? (new Date() - new Date(ping.timestamp)) : Infinity;
-            const isOnline = (ping && pingAge < 5 * 60 * 1000) || emp.isTracking;
+            const isOnline = (ping && pingAge < 5 * 60 * 1000) || emp.isTracking || !!activeSession;
 
             // Determine geofence status:
             // 1. Use ping's isInsideGeofence if available
@@ -266,9 +269,33 @@ router.get('/employees', async (req, res) => {
                 isInsideGeofence = emp.isInsideGeofence || false;
             }
 
-            // Get session and request info
-            const activeSession = sessionMap[emp.employeeId];
-            const associatedRequest = activeSession ? requestIdMap[activeSession.requestId] : null;
+            // Fallback for location: 
+            // 1. Latest Ping
+            // 2. Employee last stored location
+            // 3. Travel Session start location (fallback for new sessions)
+            let locationData = null;
+            if (ping) {
+                locationData = {
+                    latitude: ping.latitude,
+                    longitude: ping.longitude,
+                    timestamp: ping.timestamp,
+                    distance: ping.distance,
+                };
+            } else if (emp.lastLatitude && emp.lastLongitude) {
+                locationData = {
+                    latitude: emp.lastLatitude,
+                    longitude: emp.lastLongitude,
+                    timestamp: emp.lastPingTime,
+                    distance: 0,
+                };
+            } else if (activeSession && activeSession.startLocation) {
+                locationData = {
+                    latitude: activeSession.startLocation.lat,
+                    longitude: activeSession.startLocation.lng,
+                    timestamp: activeSession.startTime,
+                    distance: 0,
+                };
+            }
 
             return {
                 employeeId: emp.employeeId,
@@ -287,17 +314,7 @@ router.get('/employees', async (req, res) => {
                     destinationAddress: associatedRequest?.data?.destination || 'N/A',
                     totalDistance: activeSession.totalDistance || 0,
                 } : null,
-                lastLocation: ping ? {
-                    latitude: ping.latitude,
-                    longitude: ping.longitude,
-                    timestamp: ping.timestamp,
-                    distance: ping.distance,
-                } : (emp.lastLatitude && emp.lastLongitude) ? {
-                    latitude: emp.lastLatitude,
-                    longitude: emp.lastLongitude,
-                    timestamp: emp.lastPingTime,
-                    distance: 0,
-                } : null,
+                lastLocation: locationData,
             };
         });
 

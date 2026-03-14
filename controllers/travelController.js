@@ -1,6 +1,7 @@
 const TravelSession = require('../models/TravelSession');
 const Request = require('../models/Request');
 const LocationPing = require('../models/LocationPing');
+const Employee = require('../models/Employee');
 
 /**
  * Start a Travel Session
@@ -34,6 +35,16 @@ async function startTravel(req, res) {
             requestId,
             employeeId,
             startLocation: { lat: latitude, lng: longitude }
+        });
+
+        // Update employee's tracking status and last location immediately
+        await Employee.updateEmployee(employeeId, {
+            isTracking: true,
+            lastLatitude: parseFloat(latitude),
+            lastLongitude: parseFloat(longitude),
+            lastPingTime: new Date().toISOString(),
+            isInsideGeofence: true, // Assuming they start from a branch or valid location
+            outsideGeofenceCount: 0
         });
 
         // Optionally update the Request status to 'IN_PROGRESS' if we wanted to track it there too,
