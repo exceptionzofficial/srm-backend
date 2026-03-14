@@ -1096,48 +1096,7 @@ router.get('/status/:employeeId', async (req, res) => {
 
         const totalWorkDurationMinutes = attendanceDurationMinutes + permissionDurationMinutes + travelDurationMinutes;
 
-        res.json({
-            success: true,
-            employee: {
-                employeeId: employee.employeeId,
-                name: employee.name,
-                department: employee.department,
-                designation: employee.designation,
-                branchId: employee.branchId,
-                faceId: employee.faceId,
-                isTracking: isTracking,
-                // Documents
-                panNumber: employee.panNumber,
-                aadharNumber: employee.aadharNumber,
-                photoUrl: employee.photoUrl,
-                // Statutory
-                uan: employee.uan,
-                esicIP: employee.esicIP,
-                // Bank
-                bankAccount: employee.bankAccount,
-                ifscCode: employee.ifscCode,
-                paymentMode: employee.paymentMode,
-                joinedDate: employee.joinedDate,
-                fixedSalary: employee.fixedSalary || 0
-            },
-            status: {
-                isTracking: isTracking,
-                autoCheckedOut: autoCheckedOut,
-                canResume: canResume,
-                hasCheckedInToday: !!todayAttendance,
-                hasCheckedOutToday: !!(todayAttendance?.checkOutTime),
-                hasOpenSession: !!openSession, // Any incomplete session regardless of date
-                canCheckIn: !isTracking && !canResume && !openSession,
-                canCheckOut: isTracking || canResume || !!openSession, // Can checkout if any open session
-                attendanceRecords: allTodaySessions, // Return full list
 
-                // Duration Info
-                attendanceDurationMinutes: Math.round(attendanceDurationMinutes),
-                permissionDurationMinutes: Math.round(permissionDurationMinutes),
-                travelDurationMinutes: Math.round(travelDurationMinutes),
-                totalWorkDurationMinutes: Math.round(totalWorkDurationMinutes),
-
-        // --- BRANCH INFO AUGMENTATION ---
         const enrichSession = async (session) => {
             if (!session) return null;
             const enriched = {
