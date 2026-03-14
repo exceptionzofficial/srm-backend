@@ -204,8 +204,8 @@ async function getDetailedBranchSummary(employeeId, date) {
         return {
             branchId: s.branchId,
             branchName: s.branchName,
-            startTime: start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            endTime: end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            startTime: s.startTime,
+            endTime: s.endTime,
             durationMinutes: s.count,
             formattedDuration: s.count >= 60 
                 ? `${Math.floor(s.count / 60)}h ${s.count % 60}m`

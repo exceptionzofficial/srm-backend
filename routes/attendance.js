@@ -809,10 +809,8 @@ router.get('/calendar/:employeeId', async (req, res) => {
                 const firstRecord = dailyAttendance[0];
                 const lastRecord = dailyAttendance[dailyAttendance.length - 1];
 
-                const inTime = new Date(firstRecord.checkInTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-                const outTime = lastRecord.checkOutTime
-                    ? new Date(lastRecord.checkOutTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-                    : '-';
+                const inTime = firstRecord.checkInTime;
+                const outTime = lastRecord.checkOutTime || '-';
 
                 // Duration Calculation
                 let duration = '-';

@@ -229,8 +229,8 @@ function calculateDailyStatus({ employee, attendance, leave, permission, travel,
         remarks: remarks.join(', ') || (statuses.includes('Present') ? 'On Time' : ''),
         color,
         times: {
-            in: attendance ? new Date(attendance.checkInTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : (travel && travel.length ? 'Travel Start' : '-'),
-            out: attendance && attendance.checkOutTime ? new Date(attendance.checkOutTime).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }) : (travel && travel.length ? 'Travel End' : '-')
+            in: attendance ? attendance.checkInTime : (travel && travel.length ? 'Travel Start' : '-'),
+            out: attendance && attendance.checkOutTime ? attendance.checkOutTime : (travel && travel.length ? 'Travel End' : '-')
         },
         travelMinutes,
         totalWorkMinutes
