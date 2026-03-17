@@ -39,12 +39,13 @@ router.post('/register', upload.single('image'), async (req, res) => {
             });
         }
 
-        if ((!latitude || !longitude) && req.body.isKiosk !== true) {
-            return res.status(400).json({
-                success: false,
-                message: 'Location is required',
-            });
-        }
+
+        // if ((!latitude || !longitude) && req.body.isKiosk !== true) {
+        //     return res.status(400).json({
+        //         success: false,
+        //         message: 'Location is required',
+        //     });
+        // }
 
         // Verify employee exists and doesn't have face registered
         const employee = await Employee.getEmployeeById(employeeId);
