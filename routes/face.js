@@ -23,6 +23,11 @@ const upload = multer({
 router.post('/register', upload.single('image'), async (req, res) => {
     try {
         const { employeeId, latitude, longitude, imageBase64 } = req.body;
+        const isKiosk = req.body.isKiosk === true || req.body.isKiosk === 'true';
+
+        console.log(`[Face Register] Request received for Employee: ${employeeId}`);
+        console.log(`[Face Register] Details - Lat: ${latitude}, Lng: ${longitude}, Kiosk: ${isKiosk}`);
+        console.log(`[Face Register] Image Info - Base64 provided: ${!!imageBase64}, File provided: ${!!req.file}`);
 
 
 
@@ -51,6 +56,7 @@ router.post('/register', upload.single('image'), async (req, res) => {
         }
 
         if (employee.faceId) {
+            console.log(`[Face Register] Error: Face already registered for ${employeeId} (${employee.faceId})`);
             return res.status(400).json({
                 success: false,
                 message: 'Face already registered for this employee',
@@ -58,7 +64,6 @@ router.post('/register', upload.single('image'), async (req, res) => {
         }
 
         // Fetch location if provided, but don't enforce geofence for registration
-        const isKiosk = req.body.isKiosk === true || req.body.isKiosk === 'true';
         console.log(`[Face Register] Processing registration for ${employeeId}${isKiosk ? ' (Kiosk)' : ''}`);
 
         // Get image buffer
@@ -87,7 +92,9 @@ router.post('/register', upload.single('image'), async (req, res) => {
         }
 
         // Index face with Rekognition
+        console.log(`[Face Register] Calling Rekognition IndexFace for ${employeeId}...`);
         const faceResult = await indexFace(imageBuffer, employeeId);
+        console.log(`[Face Register] IndexFace Result:`, JSON.stringify(faceResult, null, 2));
 
         // Update employee with face ID
         await Employee.updateEmployeeFaceId(employeeId, faceResult.faceId);
@@ -99,10 +106,15 @@ router.post('/register', upload.single('image'), async (req, res) => {
             confidence: faceResult.confidence,
         });
     } catch (error) {
-        console.error('Error registering face:', error);
+        console.error('[Face Register] CRITICAL ERROR:', error);
+        if (error.name) console.error(`[Face Register] Error Name: ${error.name}`);
+        if (error.message) console.error(`[Face Register] Error Message: ${error.message}`);
+        if (error.stack) console.error(`[Face Register] Error Stack: ${error.stack}`);
+
         res.status(500).json({
             success: false,
             message: error.message || 'Error registering face',
+            error: process.env.NODE_ENV === 'development' ? error : undefined
         });
     }
 });

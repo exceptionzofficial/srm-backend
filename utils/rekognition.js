@@ -38,6 +38,7 @@ async function ensureCollectionExists() {
  */
 async function indexFace(imageBuffer, employeeId) {
     try {
+        console.log(`[Rekognition] indexFace called for ${employeeId} in collection ${COLLECTION_ID}`);
         await ensureCollectionExists();
 
         const command = new IndexFacesCommand({
@@ -65,7 +66,8 @@ async function indexFace(imageBuffer, employeeId) {
             boundingBox: faceRecord.Face.BoundingBox,
         };
     } catch (error) {
-        console.error('Error indexing face:', error);
+        console.error(`[Rekognition] indexFace Error for ${employeeId}:`, error);
+        if (error.name) console.error(`[Rekognition] Rekognition Error Name: ${error.name}`);
         throw error;
     }
 }
