@@ -135,7 +135,9 @@ router.get('/groups/:userId', async (req, res) => {
             manager.role === 'MD' || 
             manager.role === 'ADMIN' || 
             manager.role === 'SUPER_ADMIN' ||
-            manager.role.includes('ADMIN')
+            manager.role.includes('ADMIN') ||
+            manager.role === 'BRANCH_MANAGER' ||
+            manager.role.includes('MANAGER')
         );
 
         if (ADMIN_IDS.includes(userId) || isAdminRole) {
