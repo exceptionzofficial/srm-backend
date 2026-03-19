@@ -182,6 +182,17 @@ async function getDetailedBranchSummary(employeeId, date) {
         const isInside = ping.isInsideGeofence;
 
         if (isInside && branchId) {
+            // Check if we can merge with current session (same branch, < 5 min gap)
+            if (currentSession && currentSession.branchId === branchId) {
+                const gapMinutes = (new Date(ping.timestamp) - new Date(currentSession.endTime)) / (1000 * 60);
+                if (gapMinutes <= 5) {
+                    currentSession.endTime = ping.timestamp;
+                    currentSession.count += 1;
+                    return;
+                }
+            }
+            
+            // Otherwise, start new or switch branch
             if (!currentSession || currentSession.branchId !== branchId) {
                 currentSession = {
                     type: 'BRANCH',
@@ -196,8 +207,6 @@ async function getDetailedBranchSummary(employeeId, date) {
                 currentSession.endTime = ping.timestamp;
                 currentSession.count += 1;
             }
-        } else {
-            currentSession = null;
         }
     });
 
@@ -221,11 +230,13 @@ async function getDetailedBranchSummary(employeeId, date) {
         const start = new Date(s.startTime);
         const end = s.endTime ? new Date(s.endTime) : null;
         
-        let duration = s.durationMinutes || s.count || 0;
+        let duration = s.durationMinutes;
         
-        // If end time exists but duration doesn't (for BRANCH), calculate it
-        if (!duration && end) {
+        // Use clock time for BRANCH types if duration not provided
+        if (s.type === 'BRANCH' && !duration && end) {
             duration = Math.round((end - start) / (1000 * 60));
+        } else if (!duration) {
+            duration = s.count || 0;
         }
 
         return {
