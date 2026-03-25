@@ -185,11 +185,30 @@ router.get('/employees', async (req, res) => {
     try {
         const { branchId } = req.query;
 
-        // Get all employees and managers
-        const [employees, managers] = await Promise.all([
+        // Get all essential data concurrently
+        const [employees, managers, activeSessions, latestPings, branches] = await Promise.all([
             Employee.getAllEmployees(),
-            Manager.getAllManagers()
+            Manager.getAllManagers(),
+            TravelSession.getAllActiveTravelSessions().catch(() => []),
+            LocationPing.getAllLatestPings().catch(() => []),
+            Branch.getAllBranches().catch(() => [])
         ]);
+
+        // Create Maps for fast lookup
+        const sessionMap = {};
+        activeSessions.forEach(sess => {
+            sessionMap[sess.employeeId] = sess;
+        });
+
+        const pingMap = {};
+        latestPings.forEach(ping => {
+            pingMap[ping.employeeId] = ping;
+        });
+
+        const branchMap = {};
+        branches.forEach(b => {
+            branchMap[b.branchId] = b;
+        });
 
         // Tag managers and combine
         const allStaff = [
@@ -207,37 +226,8 @@ router.get('/employees', async (req, res) => {
             });
         }
 
-        // Try to get latest pings (may fail if table doesn't exist)
-        let latestPings = [];
-        try {
-            latestPings = await LocationPing.getAllLatestPings();
-        } catch (pingError) {
-            console.log('LocationPings table may not exist yet, returning employees without ping data');
-        }
-
-        // Create a map of employeeId -> latest ping
-        const pingMap = {};
-        latestPings.forEach(ping => {
-            pingMap[ping.employeeId] = ping;
-        });
-
-        // Get all active travel sessions
-        let activeSessions = [];
-        try {
-            activeSessions = await TravelSession.getAllActiveTravelSessions();
-        } catch (activeErr) {
-            console.error('Error fetching active travel sessions:', activeErr);
-        }
-
-        // Create a map of employeeId -> active session
-        const sessionMap = {};
-        activeSessions.forEach(sess => {
-            sessionMap[sess.employeeId] = sess;
-        });
-
         // Get all requests for active sessions
         const requestIdMap = {};
-        const requests = [];
         for (const sess of activeSessions) {
             if (sess.requestId) {
                 try {
@@ -250,13 +240,6 @@ router.get('/employees', async (req, res) => {
                 }
             }
         }
-
-        // Get all branches for reference
-        const branches = await Branch.getAllBranches();
-        const branchMap = {};
-        branches.forEach(b => {
-            branchMap[b.branchId] = b;
-        });
 
         // Combine staff data with location data
         const staffLocations = filteredStaff.map(emp => {
