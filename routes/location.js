@@ -274,11 +274,14 @@ router.get('/employees', async (req, res) => {
                 stationaryMinutes = Math.floor((now - lastPing) / (1000 * 60));
             }
 
-            // Determine online status:
-            // 1. If ping exists and is within 5 minutes, employee is online
-            // 2. OR if employee is actively tracking (just checked in)
-            // 3. OR if employee has an active travel session
-            const isOnline = (stationaryMinutes < 5) || emp.isTracking || !!activeSession;
+            // Determine online and tracking status:
+            // Online: Pinged in the last 10 minutes
+            // ActiveTracking: Is tracking/traveling AND pinged in the last 2 hours (to avoid ghosts)
+            const isOnline = stationaryMinutes < 10;
+            const isActiveTracking = (emp.isTracking || !!activeSession) && stationaryMinutes < 120;
+            const showOnMap = isOnline || isActiveTracking || !!activeSession;
+
+            if (!showOnMap) return null;
 
             // Determine geofence status:
             // 1. Use ping's isInsideGeofence if available
@@ -329,7 +332,7 @@ router.get('/employees', async (req, res) => {
                 department: emp.department,
                 branchId: emp.branchId,
                 branchName: branchMap[emp.branchId]?.name || 'Unassigned',
-                isTracking: emp.isTracking || false,
+                isTracking: isActiveTracking,
                 isOnline,
                 isInsideGeofence,
                 stationaryMinutes,
@@ -346,11 +349,14 @@ router.get('/employees', async (req, res) => {
             };
         });
 
+        // Filter out nulls (those where showOnMap was false)
+        const activeStaffLocations = staffLocations.filter(loc => loc !== null);
+
         res.json({
             success: true,
-            employees: staffLocations,
-            totalTracking: staffLocations.filter(e => e.isTracking).length,
-            totalInside: staffLocations.filter(e => e.isInsideGeofence).length,
+            employees: activeStaffLocations,
+            totalTracking: activeStaffLocations.filter(e => e.isTracking).length,
+            totalInside: activeStaffLocations.filter(e => e.isInsideGeofence).length,
         });
     } catch (error) {
         console.error('Error getting employee locations:', error);
