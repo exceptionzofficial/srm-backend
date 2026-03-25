@@ -1078,7 +1078,9 @@ router.get('/status/:employeeId', async (req, res) => {
 
         // 3. Fetch Completed Travel Sessions for Today
         let travelDurationMinutes = 0;
+        let activeTravel = null;
         try {
+            activeTravel = await TravelSession.getActiveTravelSession(employeeId);
             const todayTravel = await TravelSession.getTravelSessionsByDateRange(employeeId, todayDateStr, todayDateStr);
             todayTravel.forEach(session => {
                 if (session.startTime && session.endTime) {
