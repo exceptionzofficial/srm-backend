@@ -16,27 +16,33 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-// CORS configuration
 const allowedOrigins = [
     'http://localhost:3000',
-    'http://localhost:5173', // Vite Frontend
-    'http://localhost:5174', // Vite Frontend (Alternative port)
-    'http://localhost:8081', // React Native Metro
-    'https://srm-super-admin.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:5176',
+    'http://localhost:5177',
     'https://srm-hr-portal.vercel.app',
-    'https://srm-chat-app.vercel.app',
-    process.env.FRONTEND_URL
-].filter(Boolean);
+    'https://srm-super-admin.vercel.app',
+    'https://srm-finance-portal.vercel.app'
+];
 
 app.use(cors({
     origin: function (origin, callback) {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
-
-        // Dynamically allow ALL origins
-        return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            return callback(null, true);
+        } else {
+            console.warn(`Blocked by CORS: Origin ${origin} not in whitelist`);
+            return callback(null, false); // Return false instead of Error to avoid 500
+        }
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));

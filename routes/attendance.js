@@ -1151,8 +1151,8 @@ router.get('/status/:employeeId', async (req, res) => {
                 hasCheckedInToday: !!todayAttendance,
                 hasCheckedOutToday: !!(todayAttendance?.checkOutTime),
                 hasOpenSession: !!openSession, // Any incomplete session regardless of date
-                canCheckIn: !isTracking && !canResume && !openSession,
-                canCheckOut: isTracking || canResume || !!openSession, // Can checkout if any open session
+                canCheckIn: !openSession && !canResume,
+                canCheckOut: !!openSession || canResume, // Can checkout if any open session
                 attendanceRecords: allTodaySessions, // Return full list
 
                 // Duration Info

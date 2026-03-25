@@ -2,6 +2,7 @@ const TravelSession = require('../models/TravelSession');
 const Request = require('../models/Request');
 const LocationPing = require('../models/LocationPing');
 const Employee = require('../models/Employee');
+const Attendance = require('../models/Attendance');
 
 /**
  * Start a Travel Session
@@ -92,6 +93,24 @@ async function endTravel(req, res) {
                 }
             } catch (err) {
                 console.error('Error marking request as travel-completed:', err);
+            }
+        }
+
+        // Mark the employee as not tracking ONLY IF they have no active attendance session
+        if (session && session.employeeId) {
+            try {
+                const openAttendance = await Attendance.getOpenSession(session.employeeId);
+                if (!openAttendance) {
+                    console.log(`[travelController] No active attendance for ${session.employeeId}, resetting isTracking to false`);
+                    await Employee.updateEmployee(session.employeeId, {
+                        isTracking: false,
+                        trackingEndTime: new Date().toISOString()
+                    });
+                } else {
+                    console.log(`[travelController] Active attendance found for ${session.employeeId}, keeping isTracking=true`);
+                }
+            } catch (err) {
+                console.error('Error resetting tracking status after travel:', err);
             }
         }
 
