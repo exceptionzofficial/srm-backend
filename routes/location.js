@@ -199,9 +199,12 @@ router.get('/employees', async (req, res) => {
 
         let filteredStaff = allStaff;
 
-        // Filter by branch if requested
+        // Filter by branch if requested, but ALWAYS include anyone currently on an active trip
         if (branchId) {
-            filteredStaff = allStaff.filter(e => e.branchId === branchId);
+            filteredStaff = allStaff.filter(e => {
+                const id = e.employeeId || e.managerId;
+                return e.branchId === branchId || !!sessionMap[id];
+            });
         }
 
         // Try to get latest pings (may fail if table doesn't exist)
