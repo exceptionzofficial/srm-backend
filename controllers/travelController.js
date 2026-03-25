@@ -32,10 +32,31 @@ async function startTravel(req, res) {
             });
         }
 
+        // VALIDATION: Check if user has an active OFFICE attendance session
+        const openAttendance = await Attendance.getOpenSession(employeeId);
+        if (openAttendance && openAttendance.type !== 'TRAVEL') {
+            return res.status(409).json({
+                success: false,
+                code: 'OFFICE_ATTENDANCE_ACTIVE',
+                message: 'You are currently checked in at an office. Please check out before starting travel.',
+                openSession: openAttendance
+            });
+        }
+
         const session = await TravelSession.startTravelSession({
             requestId,
             employeeId,
             startLocation: { lat: latitude, lng: longitude }
+        });
+
+        // UNIFIED STATE: Create a corresponding Attendance record of type 'TRAVEL'
+        // This ensures the travel time is counted as work duration.
+        await Attendance.createAttendance({
+            employeeId,
+            latitude,
+            longitude,
+            type: 'TRAVEL',
+            status: 'present'
         });
 
         // Update employee's tracking status and last location immediately
@@ -44,12 +65,9 @@ async function startTravel(req, res) {
             lastLatitude: parseFloat(latitude),
             lastLongitude: parseFloat(longitude),
             lastPingTime: new Date().toISOString(),
-            isInsideGeofence: true, // Assuming they start from a branch or valid location
+            isInsideGeofence: true,
             outsideGeofenceCount: 0
         });
-
-        // Optionally update the Request status to 'IN_PROGRESS' if we wanted to track it there too,
-        // but TravelSession status is enough.
 
         res.status(201).json({ success: true, session });
     } catch (error) {
@@ -96,21 +114,24 @@ async function endTravel(req, res) {
             }
         }
 
-        // Mark the employee as not tracking ONLY IF they have no active attendance session
+        // UNIFIED STATE: Find and close the 'TRAVEL' attendance session
         if (session && session.employeeId) {
             try {
                 const openAttendance = await Attendance.getOpenSession(session.employeeId);
-                if (!openAttendance) {
-                    console.log(`[travelController] No active attendance for ${session.employeeId}, resetting isTracking to false`);
-                    await Employee.updateEmployee(session.employeeId, {
-                        isTracking: false,
-                        trackingEndTime: new Date().toISOString()
-                    });
-                } else {
-                    console.log(`[travelController] Active attendance found for ${session.employeeId}, keeping isTracking=true`);
+                // We only close it if it's a TRAVEL session (to avoid accidentally closing a valid office session if one was somehow forced)
+                if (openAttendance && openAttendance.type === 'TRAVEL') {
+                    console.log(`[travelController] Closing TRAVEL attendance record ${openAttendance.attendanceId}`);
+                    await Attendance.checkOut(openAttendance.attendanceId, null);
                 }
+
+                // Reset tracking status
+                console.log(`[travelController] Resetting isTracking to false for ${session.employeeId}`);
+                await Employee.updateEmployee(session.employeeId, {
+                    isTracking: false,
+                    trackingEndTime: new Date().toISOString()
+                });
             } catch (err) {
-                console.error('Error resetting tracking status after travel:', err);
+                console.error('Error closing attendance/tracking after travel:', err);
             }
         }
 

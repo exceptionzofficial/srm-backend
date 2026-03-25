@@ -1102,6 +1102,7 @@ router.get('/status/:employeeId', async (req, res) => {
                 checkInTime: session.checkInTime,
                 checkOutTime: session.checkOutTime || null,
                 date: session.date,
+                type: session.type || 'OFFICE',
                 branchId: session.branchId || null,
                 branchName: 'Branch' // Fallback
             };
@@ -1148,6 +1149,7 @@ router.get('/status/:employeeId', async (req, res) => {
                 isTracking: isTracking,
                 autoCheckedOut: autoCheckedOut,
                 canResume: canResume,
+                activeTravelSessionId: activeTravel?.sessionId || null,
                 hasCheckedInToday: !!todayAttendance,
                 hasCheckedOutToday: !!(todayAttendance?.checkOutTime),
                 hasOpenSession: !!openSession, // Any incomplete session regardless of date
