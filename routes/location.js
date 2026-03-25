@@ -7,6 +7,7 @@ const Employee = require('../models/Employee');
 const Attendance = require('../models/Attendance');
 const Request = require('../models/Request');
 const TravelSession = require('../models/TravelSession');
+const Manager = require('../models/Manager');
 const { isWithinGeofence } = require('../utils/geofence');
 
 // Auto-checkout threshold: 15 consecutive pings outside geofence (15 minutes)
@@ -184,12 +185,23 @@ router.get('/employees', async (req, res) => {
     try {
         const { branchId } = req.query;
 
-        // Get all employees
-        let employees = await Employee.getAllEmployees();
+        // Get all employees and managers
+        const [employees, managers] = await Promise.all([
+            Employee.getAllEmployees(),
+            Manager.getAllManagers()
+        ]);
+
+        // Tag managers and combine
+        const allStaff = [
+            ...employees.map(e => ({ ...e, isManager: false })),
+            ...managers.map(m => ({ ...m, isManager: true, name: m.name || `${m.firstName || ''} ${m.lastName || ''}`.trim() }))
+        ];
+
+        let filteredStaff = allStaff;
 
         // Filter by branch if requested
         if (branchId) {
-            employees = employees.filter(e => e.branchId === branchId);
+            filteredStaff = allStaff.filter(e => e.branchId === branchId);
         }
 
         // Try to get latest pings (may fail if table doesn't exist)
@@ -243,18 +255,30 @@ router.get('/employees', async (req, res) => {
             branchMap[b.branchId] = b;
         });
 
-        // Combine employee data with location data
-        const employeeLocations = employees.map(emp => {
-            const ping = pingMap[emp.employeeId];
-            const activeSession = sessionMap[emp.employeeId];
+        // Combine staff data with location data
+        const staffLocations = filteredStaff.map(emp => {
+            const employeeId = emp.employeeId || emp.managerId;
+            const ping = pingMap[employeeId];
+            const activeSession = sessionMap[employeeId];
             const associatedRequest = activeSession ? requestIdMap[activeSession.requestId] : null;
+
+            // Calculate stationary duration (time since last ping)
+            let stationaryMinutes = 9999; // Default to a large number so they don't appear online
+            if (ping) {
+                const now = new Date();
+                const lastPing = new Date(ping.timestamp);
+                stationaryMinutes = Math.floor((now - lastPing) / (1000 * 60));
+            } else if (emp.lastPingTime) {
+                const now = new Date();
+                const lastPing = new Date(emp.lastPingTime);
+                stationaryMinutes = Math.floor((now - lastPing) / (1000 * 60));
+            }
 
             // Determine online status:
             // 1. If ping exists and is within 5 minutes, employee is online
             // 2. OR if employee is actively tracking (just checked in)
             // 3. OR if employee has an active travel session
-            const pingAge = ping ? (new Date() - new Date(ping.timestamp)) : Infinity;
-            const isOnline = (ping && pingAge < 5 * 60 * 1000) || emp.isTracking || !!activeSession;
+            const isOnline = (stationaryMinutes < 5) || emp.isTracking || !!activeSession;
 
             // Determine geofence status:
             // 1. Use ping's isInsideGeofence if available
@@ -299,14 +323,17 @@ router.get('/employees', async (req, res) => {
             }
 
             return {
-                employeeId: emp.employeeId,
+                employeeId,
                 name: emp.name,
+                role: emp.role,
                 department: emp.department,
                 branchId: emp.branchId,
                 branchName: branchMap[emp.branchId]?.name || 'Unassigned',
                 isTracking: emp.isTracking || false,
                 isOnline,
                 isInsideGeofence,
+                stationaryMinutes,
+                isManager: emp.isManager || false,
                 tripDetails: activeSession ? {
                     sessionId: activeSession.sessionId,
                     requestId: activeSession.requestId,
@@ -321,9 +348,9 @@ router.get('/employees', async (req, res) => {
 
         res.json({
             success: true,
-            employees: employeeLocations,
-            totalTracking: employeeLocations.filter(e => e.isTracking).length,
-            totalInside: employeeLocations.filter(e => e.isInsideGeofence).length,
+            employees: staffLocations,
+            totalTracking: staffLocations.filter(e => e.isTracking).length,
+            totalInside: staffLocations.filter(e => e.isInsideGeofence).length,
         });
     } catch (error) {
         console.error('Error getting employee locations:', error);
