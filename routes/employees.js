@@ -195,7 +195,10 @@ const cpUpload = upload.fields([
     { name: 'doc_aadhar', maxCount: 1 },
     { name: 'doc_pan', maxCount: 1 },
     { name: 'doc_marksheet', maxCount: 1 },
-    { name: 'doc_license', maxCount: 1 }
+    { name: 'doc_license', maxCount: 1 },
+    { name: 'doc_bankpassbook', maxCount: 1 },
+    { name: 'doc_degreecertificate', maxCount: 1 },
+    { name: 'doc_payslip', maxCount: 1 }
 ]);
 
 // Create new employee (admin only) - with multiple uploads
@@ -284,6 +287,10 @@ router.post('/', cpUpload, async (req, res) => {
             if (req.files['doc_pan']) documents.panUrl = await uploadToS3(req.files['doc_pan'][0], 'documents', employeeId);
             if (req.files['doc_marksheet']) documents.marksheetUrl = await uploadToS3(req.files['doc_marksheet'][0], 'documents', employeeId);
             if (req.files['doc_license']) documents.licenseUrl = await uploadToS3(req.files['doc_license'][0], 'documents', employeeId);
+            if (req.files['doc_bankpassbook']) documents.bankPassbookUrl = await uploadToS3(req.files['doc_bankpassbook'][0], 'documents', employeeId);
+            if (req.files['doc_degreecertificate']) documents.degreeCertificateUrl = await uploadToS3(req.files['doc_degreecertificate'][0], 'documents', employeeId);
+            if (req.files['doc_payslip']) documents.payslipUrl = await uploadToS3(req.files['doc_payslip'][0], 'documents', employeeId);
+
         }
 
         employeeData.documents = documents;
@@ -389,6 +396,10 @@ router.put('/:employeeId', cpUpload, async (req, res) => {
             if (req.files['doc_pan']) documents.panUrl = await uploadToS3(req.files['doc_pan'][0], 'documents', employeeId);
             if (req.files['doc_marksheet']) documents.marksheetUrl = await uploadToS3(req.files['doc_marksheet'][0], 'documents', employeeId);
             if (req.files['doc_license']) documents.licenseUrl = await uploadToS3(req.files['doc_license'][0], 'documents', employeeId);
+            if (req.files['doc_bankpassbook']) documents.bankPassbookUrl = await uploadToS3(req.files['doc_bankpassbook'][0], 'documents', employeeId);
+            if (req.files['doc_degreecertificate']) documents.degreeCertificateUrl = await uploadToS3(req.files['doc_degreecertificate'][0], 'documents', employeeId);
+            if (req.files['doc_payslip']) documents.payslipUrl = await uploadToS3(req.files['doc_payslip'][0], 'documents', employeeId);
+
         }
 
         updates.documents = documents;

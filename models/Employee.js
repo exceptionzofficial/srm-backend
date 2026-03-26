@@ -124,6 +124,9 @@ async function createEmployee(employeeData) {
             panUrl: employeeData.documents?.panUrl || null,
             marksheetUrl: employeeData.documents?.marksheetUrl || null,
             licenseUrl: employeeData.documents?.licenseUrl || null,
+            bankPassbookUrl: employeeData.documents?.bankPassbookUrl || null,
+            degreeCertificateUrl: employeeData.documents?.degreeCertificateUrl || null,
+            payslipUrl: employeeData.documents?.payslipUrl || null,
             photoUrl: employeeData.documents?.photoUrl || employeeData.photoUrl || null,
         },
 
