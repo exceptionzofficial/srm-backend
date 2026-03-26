@@ -167,11 +167,13 @@ async function getDetailedBranchSummary(employeeId, date) {
     const pings = await getPingsForDate(employeeId, date);
     const Branch = require('./Branch');
     const TravelSession = require('./TravelSession');
+    const Request = require('./Request');
     const branches = await Branch.getAllBranches();
     const branchMap = {};
     branches.forEach(b => branchMap[b.branchId] = b.name);
 
     const travelSessions = await TravelSession.getSessionsByEmployeeAndDate(employeeId, date);
+    const permissions = await Request.getApprovedPermissions(employeeId, date);
     
     const summary = [];
     let currentSession = null;
@@ -220,6 +222,22 @@ async function getDetailedBranchSummary(employeeId, date) {
             endTime: ts.endTime,
             durationMinutes: ts.durationMinutes || 0,
             status: ts.status
+        });
+    });
+
+    // Merge approved permissions
+    permissions.forEach(p => {
+        const pStartTime = p.data?.startTime ? `${date}T${p.data.startTime}:00Z` : p.createdAt;
+        const pEndTime = p.data?.endTime ? `${date}T${p.data.endTime}:00Z` : p.createdAt;
+        
+        summary.push({
+            type: 'PERMISSION',
+            branchName: 'Permission / Partial Leave (Approved)',
+            reason: p.data?.reason,
+            startTime: pStartTime,
+            endTime: pEndTime,
+            durationMinutes: p.data?.duration || 60, // Default fallback
+            status: 'APPROVED'
         });
     });
 
