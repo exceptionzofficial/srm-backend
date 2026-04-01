@@ -75,6 +75,10 @@ async function createEmployee(employeeData) {
         employeeType: employeeData.employeeType || 'full-time', // seasonal, department, full-time, part-time, shift
         residenceLocation: employeeData.residenceLocation || null, // { lat, lng } or string address
 
+        // Referral Details
+        referredBy: employeeData.referredBy || null,
+        referralRelation: employeeData.referralRelation || null,
+
         // Statutory & Compliance
         isPfEligible: employeeData.isPfEligible === true || employeeData.isPfEligible === 'true',
         statutoryDetails: {

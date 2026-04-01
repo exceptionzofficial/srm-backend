@@ -446,6 +446,29 @@ router.delete('/:employeeId', async (req, res) => {
                     message: 'Employee/Manager not found',
                 });
             }
+            
+            // --- Tree Alteration Logic ---
+            const allEmployees = await Employee.getAllEmployees();
+            const children = allEmployees.filter(emp => emp.referredBy === employeeId);
+            
+            if (children.length > 0) {
+                // First child is promoted
+                const promotedChild = children[0];
+                
+                // Update promoted child's referredBy to the deleted employee's referrer
+                await Employee.updateEmployee(promotedChild.employeeId, {
+                    referredBy: existing.referredBy || null
+                });
+
+                // Move remaining children to the promoted child
+                for (let i = 1; i < children.length; i++) {
+                    await Employee.updateEmployee(children[i].employeeId, {
+                        referredBy: promotedChild.employeeId
+                    });
+                }
+            }
+            // -----------------------------
+
             await Employee.deleteEmployee(employeeId);
         }
         res.json({
