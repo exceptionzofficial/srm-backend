@@ -169,6 +169,7 @@ async function createEmployee(employeeData) {
             { type: 'Casual Leave', opening: 2, credit: 0, used: 0, balance: 2 },
             { type: 'Loss of Pay', opening: 0, credit: 0, used: 0, balance: 0 }
         ],
+        biometricId: employeeData.biometricId || null,
         createdAt: timestamp,
         updatedAt: timestamp,
     };
@@ -225,6 +226,29 @@ async function updateEmployee(employeeId, updates) {
  */
 async function updateEmployeeFaceId(employeeId, faceId) {
     return updateEmployee(employeeId, { faceId });
+}
+
+/**
+ * Update employee's biometric ID
+ */
+async function updateEmployeeBiometricId(employeeId, biometricId) {
+    return updateEmployee(employeeId, { biometricId });
+}
+
+/**
+ * Get employee by biometric ID
+ */
+async function getEmployeeByBiometricId(biometricId) {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME,
+        FilterExpression: 'biometricId = :biometricId',
+        ExpressionAttributeValues: {
+            ':biometricId': biometricId,
+        },
+    });
+
+    const response = await docClient.send(command);
+    return response.Items && response.Items.length > 0 ? response.Items[0] : null;
 }
 
 /**
@@ -295,6 +319,8 @@ module.exports = {
     createEmployee,
     updateEmployee,
     updateEmployeeFaceId,
+    updateEmployeeBiometricId,
+    getEmployeeByBiometricId,
     getAllEmployees,
     deleteEmployee,
     generateNextId,

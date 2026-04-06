@@ -89,11 +89,12 @@ router.post('/verify-id', async (req, res) => {
         }
 
         // Check if face is already registered
-        if (employee.faceId) {
+        if (employee.faceId || employee.biometricId) {
             return res.status(400).json({
                 success: false,
-                message: 'Face already registered for this employee.',
-                alreadyRegistered: true,
+                message: employee.faceId ? 'Face already registered for this employee.' : 'Biometric ID already linked for this employee.',
+                alreadyRegistered: !!employee.faceId,
+                biometricLinked: !!employee.biometricId,
                 employee: {
                     employeeId: employee.employeeId,
                     name: employee.name,
@@ -102,6 +103,7 @@ router.post('/verify-id', async (req, res) => {
                     branchId: employee.branchId,
                     workMode: employee.workMode || 'OFFICE',
                     faceId: employee.faceId,
+                    biometricId: employee.biometricId,
                 },
             });
         }
@@ -480,6 +482,55 @@ router.delete('/:employeeId', async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message || 'Error deleting employee',
+        });
+    }
+});
+
+/**
+ * Link Biometric ID (for eSSL device)
+ * PATCH /api/employees/:employeeId/biometric
+ */
+router.patch('/:employeeId/biometric', async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+        const { biometricId } = req.body;
+
+        if (!biometricId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Biometric ID is required',
+            });
+        }
+
+        const employee = await Employee.getEmployeeById(employeeId);
+        if (!employee) {
+            return res.status(404).json({
+                success: false,
+                message: 'Employee not found',
+            });
+        }
+
+        // Check if this biometricId is already taken by another employee
+        const existingWithId = await Employee.getEmployeeByBiometricId(biometricId);
+        if (existingWithId && existingWithId.employeeId !== employeeId) {
+            return res.status(400).json({
+                success: false,
+                message: `Biometric ID ${biometricId} is already assigned to ${existingWithId.name}`,
+            });
+        }
+
+        const updated = await Employee.updateEmployeeBiometricId(employeeId, biometricId);
+
+        res.json({
+            success: true,
+            message: 'Biometric ID linked successfully',
+            employee: updated,
+        });
+    } catch (error) {
+        console.error('Error linking biometric ID:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error linking biometric ID',
         });
     }
 });
